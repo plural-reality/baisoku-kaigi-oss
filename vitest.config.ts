@@ -2,8 +2,10 @@ import path from "node:path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  esbuild: {
-    jsx: "automatic",
+  // Vite 8 transforms with Oxc. tsconfig keeps `jsx: preserve` for Next.js, so
+  // the tests need the automatic runtime set here.
+  oxc: {
+    jsx: { runtime: "automatic" },
   },
   // design-system の部品（app/components/pr/）は自分の CSS を import する。テストでは CSS を読まないので、
   // Tailwind の PostCSS 設定（postcss.config.mjs）を通さない。
