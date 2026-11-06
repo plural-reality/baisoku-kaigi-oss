@@ -15,6 +15,8 @@ const chromiumUse =
  */
 export default defineConfig({
   testDir: "./tests",
+  // tests/integration holds Vitest suites (vitest.integration.config.ts).
+  testIgnore: ["integration/**"],
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
