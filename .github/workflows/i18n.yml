@@ -1,0 +1,30 @@
+name: i18n
+
+# The "CI" workflow (ci.yml) has been disabled since 2025-12, so the language
+# checks run here on every PR and push to main: no hardcoded Japanese in the
+# source (scripts/hardcoded-japanese.mjs) and symmetric message catalogs
+# (app/i18n/__tests__). Cheap: no build, no AWS.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  i18n:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # No npm cache: on the self-hosted runner, saving it after the job held
+      # the only runner for over 30 minutes on a slow uplink (2026-10-22).
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+      - run: npm ci --ignore-scripts
+      - name: No hardcoded Japanese
+        run: node scripts/hardcoded-japanese.mjs
+      - name: Message catalogs and the detector
+        run: npx vitest run app/i18n --testTimeout=60000

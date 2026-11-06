@@ -1,0 +1,46 @@
+{
+  "source": "plural-reality/design-system",
+  "componentsDir": "app/components/pr",
+  "items": {
+    "account-menu": {
+      "commit": "bdace70aa5f087d79b17420b1878406bfe501923",
+      "files": {
+        "app/components/pr/AccountMenu/AccountMenu.css": "sha256-75b5819d428c55ff6099d756c57db8e226e055a86cd2243188810aceb7ef0ac4",
+        "app/components/pr/AccountMenu/AccountMenu.tsx": "sha256-ffb61b819888a26e5164239caa9986fada32883c064713909675e6179f99ee0a"
+      }
+    },
+    "button": {
+      "commit": "bdace70aa5f087d79b17420b1878406bfe501923",
+      "files": {
+        "app/components/pr/Button/Button.css": "sha256-e1cb84e089d4950a13fbf6bd22fc7f4e9467b6e0dfb34d9d6248c9ea6e48d6cc",
+        "app/components/pr/Button/Button.tsx": "sha256-073b3f33eef68eab6628846ed6ddc55eecd1e5bcb369b2bc22adf1c67ef814be"
+      }
+    },
+    "copy-check": {
+      "commit": "bdace70aa5f087d79b17420b1878406bfe501923",
+      "files": {
+        "scripts/check-design-system-copy.mjs": "sha256-5a0d9050f23708ff7fb5b71ccdbfa6a1c60d35dbcb1f5f36f56aa3393800c7f5"
+      }
+    },
+    "icon-button": {
+      "commit": "bdace70aa5f087d79b17420b1878406bfe501923",
+      "files": {
+        "app/components/pr/IconButton/IconButton.css": "sha256-a25a556082a6c9b5c0f0b5b994ae51296c00d03761a19eabb034861c69eddb9c",
+        "app/components/pr/IconButton/IconButton.tsx": "sha256-43966916b7e95f79237bd66fc9317daa02a3a51c9d5aa88c406ddabd5ecf4867"
+      }
+    },
+    "locale-menu": {
+      "commit": "bdace70aa5f087d79b17420b1878406bfe501923",
+      "files": {
+        "app/components/pr/LocaleMenu/LocaleMenu.tsx": "sha256-73d97017f42ac0991ea3abd7eb96c0c1c17612fc54ee88ed474c3827e500ed50"
+      }
+    },
+    "menu": {
+      "commit": "bdace70aa5f087d79b17420b1878406bfe501923",
+      "files": {
+        "app/components/pr/Menu/Menu.css": "sha256-92252d55a92749b03fdf1bec4b8268a6c4fcf057d4192cffcae9bb93974c54d1",
+        "app/components/pr/Menu/Menu.tsx": "sha256-85126eb6796806bf4c17dd7ea621828fe5ad27c82a60ed201bad270574e3516b"
+      }
+    }
+  }
+}

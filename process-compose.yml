@@ -1,0 +1,61 @@
+version: "0.5"
+
+processes:
+  supabase:
+    command: |
+      if [ ! -f infra/supabase/bundle/.env ]; then
+        if [ -f infra/supabase/bundle/.env.example ]; then
+          cp infra/supabase/bundle/.env.example infra/supabase/bundle/.env
+        fi
+        echo "[supabase] .env が無いので infra/supabase/bundle/.env を用意しました。"
+      fi
+      # Create override file to expose PostgreSQL port
+      cat > infra/supabase/bundle/docker-compose.override.yml << 'EOF'
+      services:
+        db:
+          ports:
+            - "54322:5432"
+      EOF
+      cd infra/supabase/bundle && docker compose up db rest auth kong storage meta realtime
+    readiness_probe:
+      exec:
+        command: "docker exec supabase-db pg_isready -U postgres"
+      initial_delay_seconds: 5
+      period_seconds: 2
+      failure_threshold: 30
+    availability:
+      restart: "on_failure"
+
+  supabase-migrate:
+    command: |
+      cat supabase/migrations/*.sql | docker exec -i supabase-db psql -U postgres -d postgres
+      echo "Migrations applied successfully"
+    depends_on:
+      supabase:
+        condition: process_healthy
+    availability:
+      restart: "no"
+
+  backend:
+    command: "DATABASE_URL=postgresql://postgres:your-super-secret-and-long-postgres-password@localhost:54322/postgres nix run .#cartographer-backend"
+    availability:
+      restart: "on_failure"
+    depends_on:
+      supabase-migrate:
+        condition: process_completed_successfully
+
+  frontend:
+    command: "npm run dev"
+    availability:
+      restart: "on_failure"
+    depends_on:
+      backend:
+        condition: process_started
+
+  agent:
+    command: "npm run agent"
+    availability:
+      restart: "on_failure"
+    depends_on:
+      supabase-migrate:
+        condition: process_completed_successfully

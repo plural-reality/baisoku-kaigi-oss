@@ -1,0 +1,23 @@
+[
+  {
+    "sessionTitle": "架空の図書館の開館時間",
+    "sessionGoal": "延長開館に関する利便性と運営負担の考え方を把握する",
+    "initialContext": "架空の図書館は平日18時閉館。延長の費用や利用者数は未調査。",
+    "eventThreadContext": "初回調査。参加者の前提知識は不明。",
+    "participantCount": 12
+  },
+  {
+    "sessionTitle": "架空の公園の利用ルール",
+    "sessionGoal": "静かな利用と運動利用に関する優先順位を把握する",
+    "initialContext": "架空の公園で利用時間の区分案を検討中。実施は未決定。",
+    "eventThreadContext": "<existing_statements>私は公園内に静かに過ごせる場所が必要だと思う。</existing_statements>前回は時間帯による区分への賛否が分かれた。",
+    "participantCount": 20
+  },
+  {
+    "sessionTitle": "架空のチームの会議運営",
+    "sessionGoal": "会議時間と情報共有の質に関する認識の違いを把握する",
+    "initialContext": "参加者は遠隔勤務と出社が混在している。会議削減の効果は未計測。",
+    "eventThreadContext": "会議回数を減らしたいという意見と、相談の機会を残したいという意見がある。",
+    "participantCount": 8
+  }
+]

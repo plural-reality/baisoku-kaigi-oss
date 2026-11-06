@@ -1,0 +1,231 @@
+export const dynamic = "force-dynamic";
+
+import { type NextRequest, NextResponse } from "next/server";
+
+import { getUserIdFromRequest } from "@/lib/auth";
+import {
+  requireSessionAdminToken,
+  SessionAccessError,
+} from "@/lib/server/session-access";
+import { getSessionReportById } from "@/lib/server/session-reports";
+import { aliasUserId } from "@/lib/server/user-alias";
+import { selectAllRange, supabase } from "@/lib/supabase";
+
+type ResponseValue = -2 | -1 | 0 | 1 | 2;
+
+function getStatementFromSnapshot(
+  snapshot: Record<string, unknown> | null,
+  statementNumber: number,
+): { id: string; text: string | null } | null {
+  if (!snapshot || typeof snapshot !== "object") {
+    return null;
+  }
+
+  const stats = (snapshot as { statementStats?: unknown }).statementStats;
+  if (!Array.isArray(stats)) {
+    return null;
+  }
+
+  for (const item of stats) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const stat = item as {
+      statementId?: unknown;
+      statementNumber?: unknown;
+      text?: unknown;
+    };
+
+    if (
+      typeof stat.statementId !== "string" ||
+      typeof stat.statementNumber !== "number"
+    ) {
+      continue;
+    }
+
+    if (stat.statementNumber !== statementNumber) {
+      continue;
+    }
+
+    return {
+      id: stat.statementId,
+      text: typeof stat.text === "string" ? stat.text : null,
+    };
+  }
+
+  return null;
+}
+
+function handleAccessError(error: unknown) {
+  if (error instanceof SessionAccessError) {
+    return NextResponse.json(
+      { error: error.message },
+      { status: error.status },
+    );
+  }
+  console.error(error);
+  return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+}
+
+export async function GET(
+  request: NextRequest,
+  {
+    params,
+  }: {
+    params: Promise<{
+      sessionId: string;
+      accessToken: string;
+      reportId: string;
+    }>;
+  },
+) {
+  const { sessionId, accessToken, reportId } = await params;
+  const userId = await getUserIdFromRequest(request);
+
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const url = new URL(request.url);
+  const statementNumberParam = url.searchParams.get("statementNumber");
+
+  if (!statementNumberParam) {
+    return NextResponse.json(
+      { error: "Missing required query parameter: statementNumber" },
+      { status: 400 },
+    );
+  }
+
+  const statementNumber = parseInt(statementNumberParam, 10);
+  if (Number.isNaN(statementNumber) || statementNumber < 1) {
+    return NextResponse.json(
+      { error: "Invalid statementNumber" },
+      { status: 400 },
+    );
+  }
+
+  try {
+    await requireSessionAdminToken(sessionId, accessToken);
+
+    const report = await getSessionReportById(reportId);
+
+    if (!report || report.sessionId !== sessionId) {
+      return NextResponse.json({ error: "Report not found" }, { status: 404 });
+    }
+
+    const snapshotStatement = getStatementFromSnapshot(
+      report.promptSnapshot,
+      statementNumber,
+    );
+
+    let statementId = snapshotStatement?.id ?? null;
+    let statementText = snapshotStatement?.text ?? null;
+
+    if (!statementId || statementText === null) {
+      // order_index is 0-based, statementNumber is 1-based
+      const orderIndex = statementNumber - 1;
+      const { data: statements, error: statementError } = await supabase
+        .from("statements")
+        .select("id, text, order_index")
+        .eq("session_id", sessionId)
+        .eq("order_index", orderIndex)
+        .order("created_at", { ascending: true })
+        .limit(1);
+
+      if (statementError) {
+        console.error("Failed to fetch statement:", statementError);
+        return NextResponse.json(
+          { error: "Failed to fetch statement" },
+          { status: 500 },
+        );
+      }
+
+      const statement = statements?.[0];
+      if (!statement) {
+        return NextResponse.json(
+          { error: "Statement not found" },
+          { status: 404 },
+        );
+      }
+
+      statementId = statement.id;
+      statementText = statement.text;
+    }
+
+    // Fetch all responses for this statement
+    const { data: responses, error: responsesError } = await selectAllRange(
+      (from, to) =>
+        supabase
+          .from("responses")
+          .select("participant_user_id, response_type, value, text_response")
+          .eq("session_id", sessionId)
+          .eq("statement_id", statementId)
+          // Stable order so the per-statement report detail list is
+          // deterministic and safe under offset pagination.
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to),
+    );
+
+    if (responsesError) {
+      console.error("Failed to fetch responses:", responsesError);
+      return NextResponse.json(
+        { error: "Failed to fetch responses" },
+        { status: 500 },
+      );
+    }
+
+    // Fetch participants for this session
+    const { data: participants, error: participantsError } =
+      await selectAllRange((from, to) =>
+        supabase
+          .from("participants")
+          .select("user_id, name")
+          .eq("session_id", sessionId)
+          // Stable order so participant name lookups can't drop rows under
+          // offset pagination (would surface as "Unknown" authors).
+          .order("created_at", { ascending: true })
+          .order("user_id", { ascending: true })
+          .range(from, to),
+      );
+
+    if (participantsError) {
+      console.error("Failed to fetch participants:", participantsError);
+      return NextResponse.json(
+        { error: "Failed to fetch participants" },
+        { status: 500 },
+      );
+    }
+
+    // Create a map of user_id -> name
+    const participantMap = new Map(
+      (participants ?? []).map((p) => [p.user_id, p.name]),
+    );
+
+    const formattedResponses = (responses ?? []).map((response) => {
+      const value = response.value as ResponseValue | null;
+
+      return {
+        // Per-session alias, never the raw UUID (audit H2).
+        participantUserId: aliasUserId(sessionId, response.participant_user_id),
+        participantName:
+          participantMap.get(response.participant_user_id) ?? "Unknown",
+        responseType: response.response_type as "scale" | "free_text",
+        value,
+        textResponse: response.text_response,
+      };
+    });
+
+    return NextResponse.json({
+      statement: {
+        id: statementId,
+        number: statementNumber,
+        text: statementText ?? "",
+      },
+      responses: formattedResponses,
+    });
+  } catch (error) {
+    return handleAccessError(error);
+  }
+}

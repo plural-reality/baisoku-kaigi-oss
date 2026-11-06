@@ -1,0 +1,12 @@
+/* 値は tokens/tokens.css だけを参照する */
+.pr-iconbtn { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; flex: none;
+  border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--fg); cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease); }
+.pr-iconbtn--sm { width: 32px; height: 32px; }
+.pr-iconbtn--md { width: 40px; height: 40px; }
+.pr-iconbtn:hover:not(:disabled) { background: var(--surface-2); }
+.pr-iconbtn[aria-pressed="true"] { background: var(--surface-3); }
+.pr-iconbtn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.pr-iconbtn:disabled { cursor: not-allowed; color: var(--fg-subtle); }
+.pr-iconbtn__icon { display: inline-flex; width: 18px; height: 18px; }
+.pr-iconbtn__icon > svg { width: 100%; height: 100%; }

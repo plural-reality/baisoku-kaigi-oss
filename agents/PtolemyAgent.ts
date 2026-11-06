@@ -1,0 +1,1268 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { toContentLanguage } from "../app/lib/content-language";
+import {
+  sessionFacilitatorContext,
+  sessionFacilitatorGoal,
+} from "../app/lib/session-context";
+import { wrapUntrusted } from "../app/lib/untrusted-text";
+import {
+  generatePlanMarkdown,
+  generateSurveyAnalysisMarkdown,
+  generateSurveyStatements,
+  type ParticipantReflectionInput,
+  type StatementStat,
+} from "./llm";
+import type {
+  AgentInstanceRow,
+  AgentRunResult,
+  EventThreadRow,
+  PtolemyState,
+  SessionRow,
+  ThreadEventType,
+} from "./types";
+import { truncate } from "./utils";
+
+type StatePayload = {
+  lastPlanEventId?: string;
+  surveyEventId?: string;
+  statementIds?: string[];
+  // The event a CREATING_* run created for its output. Recorded before the LLM
+  // call so a failed or interrupted run is resumed on the same event instead of
+  // leaving one orphan per retry (hourly re-bootstrap piled up ~28 failed plan
+  // events per thread), and so finished work is not redone after a restart.
+  pendingEvent?: { state: string; id: string };
+};
+
+type ClaimedEvent = {
+  id: string;
+  payload: Record<string, unknown>;
+};
+
+const hasMarkdown = (payload: Record<string, unknown>): boolean =>
+  typeof payload.markdown === "string" && payload.markdown.length > 0;
+
+const hasStatements = (payload: Record<string, unknown>): boolean =>
+  Array.isArray(payload.statementIds) && payload.statementIds.length > 0;
+
+type ThreadContext = {
+  thread: EventThreadRow;
+  session: SessionRow;
+};
+
+export class PtolemyAgent {
+  constructor(private supabase: SupabaseClient) {}
+
+  setSupabaseClient(supabase: SupabaseClient) {
+    this.supabase = supabase;
+  }
+
+  async run(instance: AgentInstanceRow): Promise<AgentRunResult> {
+    this.log(instance, "tick", { state: instance.state });
+    switch (instance.state as PtolemyState) {
+      case "CREATING_PLAN":
+        return this.handleCreatingPlan(instance);
+      case "WAITING_SURVEY":
+        return this.handleWaitingForProceed(instance, "CREATING_SURVEY");
+      case "CREATING_SURVEY":
+        return this.handleCreatingSurvey(instance);
+      case "COLLECTING_SURVEY":
+        return this.handleCollectingSurvey(instance);
+      case "WAITING_ANALYSIS":
+        return this.handleWaitingForProceed(instance, "CREATING_ANALYSIS");
+      case "CREATING_ANALYSIS":
+        return this.handleCreatingAnalysis(instance);
+      case "WAITING_PLAN":
+        return this.handleWaitingForProceed(instance, "CREATING_PLAN");
+      default:
+        this.warn(instance, "unknown state, idling");
+        return { status: "idle" };
+    }
+  }
+
+  private async getThreadContext(
+    threadId: string,
+  ): Promise<ThreadContext | null> {
+    const { data: thread, error: threadError } = await this.supabase
+      .from("event_threads")
+      .select("id, session_id, should_proceed")
+      .eq("id", threadId)
+      .single();
+
+    if (threadError || !thread) {
+      console.error("[Ptolemy] Failed to load thread context:", threadError);
+      return null;
+    }
+
+    const { data: session, error: sessionError } = await this.supabase
+      .from("sessions")
+      .select(
+        "id, title, context, goal, facilitator_context, facilitator_goal, language",
+      )
+      .eq("id", thread.session_id)
+      .single();
+
+    if (sessionError || !session) {
+      console.error("[Ptolemy] Failed to load session context:", sessionError);
+      return null;
+    }
+
+    return { thread, session };
+  }
+
+  private async handleCreatingPlan(
+    instance: AgentInstanceRow,
+  ): Promise<AgentRunResult> {
+    this.log(instance, "creating plan event");
+    const context = await this.getThreadContext(instance.thread_id);
+    if (!context) return { status: "waiting" };
+
+    const claimed = await this.claimStateEvent(instance, {
+      threadId: context.thread.id,
+      type: "plan",
+      payload: { markdown: "" },
+    });
+    const eventId = claimed.id;
+    // A previous run already wrote the plan and stopped before transitioning.
+    if (!hasMarkdown(claimed.payload)) {
+      const written = await this.writePlan(instance, context, eventId);
+      if (!written) return { status: "idle" };
+    }
+
+    const { count: planCount } = await this.supabase
+      .from("events")
+      .select("*", { count: "exact", head: true })
+      .eq("thread_id", context.thread.id)
+      .eq("type", "plan");
+
+    // If this is the first plan, we proceed directly to creating the survey
+    // regardless of the should_proceed flag (which defaults to false).
+    // This ensures the initial 15 questions are always generated.
+    if (planCount === 1) {
+      await this.transition(instance, "CREATING_SURVEY", {
+        lastPlanEventId: eventId,
+      });
+      this.log(instance, "transitioned to CREATING_SURVEY (first run)", {
+        planEventId: eventId,
+      });
+    } else {
+      await this.transition(instance, "WAITING_SURVEY", {
+        lastPlanEventId: eventId,
+      });
+      this.log(instance, "transitioned to WAITING_SURVEY", {
+        planEventId: eventId,
+      });
+    }
+
+    return { status: "transitioned" };
+  }
+
+  private async writePlan(
+    instance: AgentInstanceRow,
+    context: ThreadContext,
+    eventId: string,
+  ): Promise<boolean> {
+    const [
+      latestAnalysis,
+      userMessages,
+      eventThreadContext,
+      participantCount,
+      participantReflections,
+    ] = await Promise.all([
+      this.getLatestEventMarkdown(context.thread.id, "survey_analysis"),
+      this.getRecentUserMessages(context.thread.id),
+      this.getEventThreadContext(context.thread.id),
+      this.getParticipantCount(context.session.id),
+      this.getParticipantReflections(context.session.id),
+    ]);
+
+    let markdown: string;
+    try {
+      markdown = await generatePlanMarkdown({
+        sessionTitle: context.session.title,
+        sessionGoal: sessionFacilitatorGoal(context.session),
+        initialContext: sessionFacilitatorContext(context.session),
+        latestAnalysisMarkdown: latestAnalysis,
+        recentUserMessages: userMessages,
+        eventThreadContext,
+        participantCount,
+        participantReflections,
+        language: toContentLanguage(context.session.language),
+      });
+    } catch (error) {
+      const message = this.stringifyError(error);
+      this.warn(instance, "plan generation failed", { error: message });
+      await this.supabase
+        .from("events")
+        .update({
+          payload: { markdown: "", error: message },
+          progress: 0,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", eventId);
+      return false;
+    }
+
+    await this.supabase
+      .from("events")
+      .update({
+        payload: { markdown },
+        progress: 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", eventId);
+    this.log(instance, "plan markdown ready", { eventId });
+    return true;
+  }
+
+  private async handleWaitingForProceed(
+    instance: AgentInstanceRow,
+    nextState: PtolemyState,
+  ): Promise<AgentRunResult> {
+    const context = await this.getThreadContext(instance.thread_id);
+    if (!context) return { status: "waiting" };
+
+    if (!context.thread.should_proceed) {
+      this.log(instance, "waiting for shouldProceed toggle");
+      return { status: "waiting" };
+    }
+
+    await this.transition(
+      instance,
+      nextState,
+      (instance.state_payload ?? {}) as StatePayload,
+    );
+    return { status: "transitioned" };
+  }
+
+  private async handleCreatingSurvey(
+    instance: AgentInstanceRow,
+  ): Promise<AgentRunResult> {
+    this.log(instance, "creating survey event & statements");
+    const context = await this.getThreadContext(instance.thread_id);
+    if (!context) return { status: "waiting" };
+
+    const claimed = await this.claimStateEvent(instance, {
+      threadId: context.thread.id,
+      type: "survey",
+      payload: { statementIds: [] },
+    });
+    const surveyEventId = claimed.id;
+
+    // A previous run appended the statements and recorded them on the event,
+    // then stopped before transitioning: appending again would duplicate them.
+    if (hasStatements(claimed.payload)) {
+      const statementIds = claimed.payload.statementIds as string[];
+      await this.transition(instance, "COLLECTING_SURVEY", {
+        surveyEventId,
+        statementIds,
+      });
+      this.log(instance, "transitioned to COLLECTING_SURVEY (resumed)", {
+        surveyEventId,
+        statementCount: statementIds.length,
+      });
+      return { status: "transitioned" };
+    }
+
+    // Check if this is the first survey and if we already have statements (e.g. from preview)
+    const { count: surveyCount } = await this.supabase
+      .from("events")
+      .select("*", { count: "exact", head: true })
+      .eq("thread_id", context.thread.id)
+      .eq("type", "survey");
+
+    const lastOrderIndex = await this.getLastStatementOrderIndex(
+      context.session.id,
+    );
+
+    // If this is the first survey (count === 1 because we just created one)
+    // and we already have statements, use them instead of generating new ones.
+    // Note: getLastStatementOrderIndex returns -1 when no statements exist,
+    // so >= 0 correctly detects existing statements (even with order_index = 0).
+    if ((surveyCount === 1 || surveyCount === 0) && lastOrderIndex >= 0) {
+      this.log(
+        instance,
+        "using existing statements (preview) for first survey",
+      );
+
+      const { data: existingStatements, error: fetchError } =
+        await this.supabase
+          .from("statements")
+          .select("id")
+          .eq("session_id", context.session.id)
+          .order("order_index", { ascending: true });
+
+      if (fetchError || !existingStatements) {
+        console.error(
+          "[Ptolemy] Failed to fetch existing statements:",
+          fetchError,
+        );
+        // Fallback to generation if fetch fails? Or just error out?
+        // Let's proceed to generation as fallback, or return error.
+        // Proceeding to generation might duplicate, but safer than crashing.
+      } else {
+        const statementIds = existingStatements.map((s) => s.id);
+
+        await this.supabase
+          .from("events")
+          .update({
+            payload: { statementIds },
+            progress: 0.5,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", surveyEventId);
+
+        await this.transition(instance, "COLLECTING_SURVEY", {
+          surveyEventId,
+          statementIds,
+        });
+        this.log(instance, "transitioned to COLLECTING_SURVEY (existing)", {
+          surveyEventId,
+          statementCount: statementIds.length,
+        });
+
+        return { status: "transitioned" };
+      }
+    }
+
+    const [
+      planMarkdown,
+      latestAnalysisMarkdown,
+      eventThreadContext,
+      participantCount,
+    ] = await Promise.all([
+      this.getLatestEventMarkdown(context.thread.id, "plan"),
+      this.getLatestEventMarkdown(context.thread.id, "survey_analysis"),
+      this.getEventThreadContext(context.thread.id),
+      this.getParticipantCount(context.session.id),
+    ]);
+
+    let statementTexts: string[];
+    try {
+      statementTexts = await generateSurveyStatements({
+        sessionTitle: context.session.title,
+        sessionGoal: sessionFacilitatorGoal(context.session),
+        initialContext: sessionFacilitatorContext(context.session),
+        planMarkdown,
+        latestAnalysisMarkdown,
+        eventThreadContext,
+        participantCount,
+        language: toContentLanguage(context.session.language),
+      });
+    } catch (error) {
+      const message = this.stringifyError(error);
+      this.warn(instance, "survey statement generation failed", {
+        error: message,
+      });
+      await this.supabase
+        .from("events")
+        .update({
+          payload: { statementIds: [], error: message },
+          progress: 0,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", surveyEventId);
+      return { status: "idle" };
+    }
+
+    const preparedStatements = statementTexts.slice(0, 15);
+
+    if (preparedStatements.length === 0) {
+      const message = "No statements generated for survey";
+      this.warn(instance, message);
+      await this.supabase
+        .from("events")
+        .update({
+          payload: { statementIds: [], error: message },
+          progress: 0,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", surveyEventId);
+      return { status: "idle" };
+    }
+
+    // Atomic, per-session-serialized append (audit M4): the same RPC the HTTP
+    // /statements/generate routes use, so concurrent agent + route appends
+    // cannot duplicate order_index (replaces read-MAX-then-insert, which would
+    // now also violate the UNIQUE(session_id, order_index) index).
+    const { data: insertedStatements, error: statementsError } = (await (
+      this.supabase.rpc as CallableFunction
+    )("append_session_statements", {
+      p_session_id: context.session.id,
+      p_texts: preparedStatements,
+    })) as {
+      data: Array<{ id: string }> | null;
+      error: { message?: string } | null;
+    };
+
+    if (statementsError || !insertedStatements) {
+      const message =
+        statementsError?.message ?? "Failed to insert survey statements";
+      console.error("[Ptolemy] Failed to insert survey statements:", message);
+      await this.markEventFailed(surveyEventId, {
+        statementIds: [],
+        error: message,
+      });
+      return { status: "idle" };
+    }
+
+    const statementIds = insertedStatements.map((row) => row.id);
+
+    await this.supabase
+      .from("events")
+      .update({
+        payload: { statementIds },
+        progress: 0.5,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", surveyEventId);
+    this.log(instance, "survey statements ready", {
+      statementCount: statementIds.length,
+    });
+
+    await this.transition(instance, "COLLECTING_SURVEY", {
+      surveyEventId,
+      statementIds,
+    });
+    this.log(instance, "transitioned to COLLECTING_SURVEY", {
+      surveyEventId,
+      statementCount: statementIds.length,
+    });
+
+    return { status: "transitioned" };
+  }
+
+  private async handleCollectingSurvey(
+    instance: AgentInstanceRow,
+  ): Promise<AgentRunResult> {
+    const payload = (instance.state_payload ?? {}) as StatePayload;
+    if (!payload.statementIds?.length || !payload.surveyEventId) {
+      console.warn("[Ptolemy] Missing survey context in state payload");
+      return { status: "waiting" };
+    }
+
+    const context = await this.getThreadContext(instance.thread_id);
+    if (!context) return { status: "waiting" };
+
+    const participantCount = await this.getParticipantCount(context.session.id);
+    if (participantCount === 0) {
+      this.log(instance, "no participants yet, keep waiting");
+      return { status: "waiting" };
+    }
+
+    const { data: responses, error } = await this.supabase
+      .from("responses")
+      .select("statement_id")
+      .in("statement_id", payload.statementIds);
+
+    if (error) {
+      console.error("[Ptolemy] Failed to load responses:", error);
+      return { status: "waiting" };
+    }
+
+    const counts = new Map<string, number>();
+    (responses ?? []).forEach((row) => {
+      counts.set(row.statement_id, (counts.get(row.statement_id) ?? 0) + 1);
+    });
+
+    const thresholdReached = payload.statementIds.every((id) => {
+      const ratio = (counts.get(id) ?? 0) / participantCount;
+      return ratio >= 0.8;
+    });
+
+    if (!thresholdReached) {
+      this.log(instance, "still collecting responses", {
+        participantCount,
+        coverageByStatement: payload.statementIds.map((id) => ({
+          id: truncate(id),
+          ratio: Number(((counts.get(id) ?? 0) / participantCount).toFixed(2)),
+        })),
+      });
+      return { status: "waiting" };
+    }
+
+    await this.supabase
+      .from("events")
+      .update({
+        progress: 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", payload.surveyEventId);
+
+    await this.transition(instance, "WAITING_ANALYSIS", {
+      statementIds: payload.statementIds,
+    });
+    this.log(instance, "transitioned to WAITING_ANALYSIS");
+
+    return { status: "transitioned" };
+  }
+
+  private async handleCreatingAnalysis(
+    instance: AgentInstanceRow,
+  ): Promise<AgentRunResult> {
+    this.log(instance, "creating survey analysis");
+    const payload = (instance.state_payload ?? {}) as StatePayload;
+    const statementIds = payload.statementIds ?? [];
+    const context = await this.getThreadContext(instance.thread_id);
+    if (!context) return { status: "waiting" };
+    if (statementIds.length === 0) {
+      this.warn(instance, "no statements to analyze yet");
+      return { status: "waiting" };
+    }
+
+    const claimed = await this.claimStateEvent(instance, {
+      threadId: context.thread.id,
+      type: "survey_analysis",
+      payload: { statementIds, markdown: "" },
+    });
+    const analysisEventId = claimed.id;
+    if (hasMarkdown(claimed.payload)) {
+      await this.transition(instance, "WAITING_PLAN");
+      this.log(instance, "transitioned to WAITING_PLAN (resumed)", {
+        analysisEventId,
+      });
+      return { status: "transitioned" };
+    }
+
+    const { data: statements, error: statementsError } = await this.supabase
+      .from("statements")
+      .select("id, text")
+      .in("id", statementIds);
+
+    if (statementsError) {
+      const message = statementsError.message ?? "Failed to load statements";
+      console.error("[Ptolemy] Failed to load statements:", message);
+      await this.markEventFailed(analysisEventId, {
+        statementIds,
+        error: message,
+      });
+      return { status: "idle" };
+    }
+
+    const { data: responses, error: responsesError } = await this.supabase
+      .from("responses")
+      .select(
+        "statement_id, value, participant_user_id, response_type, text_response",
+      )
+      .in("statement_id", statementIds);
+
+    if (responsesError) {
+      const message =
+        responsesError.message ?? "Failed to load responses for analysis";
+      console.error(
+        "[Ptolemy] Failed to load responses for analysis:",
+        message,
+      );
+      await this.markEventFailed(analysisEventId, {
+        statementIds,
+        error: message,
+      });
+      return { status: "idle" };
+    }
+
+    let participantNameMap: Map<string, string> | undefined;
+    const participantIds = new Set(
+      (responses ?? [])
+        .map((response) => response.participant_user_id)
+        .filter((participantId): participantId is string =>
+          Boolean(participantId),
+        ),
+    );
+
+    if (participantIds.size > 0) {
+      const { data: participantRows, error: participantError } =
+        await this.supabase
+          .from("participants")
+          .select("user_id, name")
+          .eq("session_id", context.session.id)
+          .in("user_id", Array.from(participantIds));
+
+      if (participantError) {
+        console.error(
+          "[Ptolemy] Failed to load participant names for analysis:",
+          participantError,
+        );
+      } else if (participantRows) {
+        participantNameMap = new Map(
+          participantRows.map((participant) => [
+            participant.user_id,
+            participant.name,
+          ]),
+        );
+      }
+    }
+
+    const participantCount = await this.getParticipantCount(context.session.id);
+    const stats = this.buildStatementStats(
+      statements ?? [],
+      responses ?? [],
+      participantNameMap,
+    );
+    const eventThreadContext = await this.getEventThreadContext(
+      context.thread.id,
+    );
+    let markdown: string;
+    try {
+      markdown = await generateSurveyAnalysisMarkdown({
+        sessionTitle: context.session.title,
+        sessionGoal: sessionFacilitatorGoal(context.session),
+        initialContext: sessionFacilitatorContext(context.session),
+        totalParticipants: participantCount,
+        statements: stats,
+        eventThreadContext,
+        language: toContentLanguage(context.session.language),
+      });
+    } catch (error) {
+      const message = this.stringifyError(error);
+      this.warn(instance, "survey analysis generation failed", {
+        error: message,
+      });
+      await this.supabase
+        .from("events")
+        .update({
+          payload: { statementIds, error: message },
+          progress: 0,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", analysisEventId);
+      return { status: "idle" };
+    }
+
+    await this.supabase
+      .from("events")
+      .update({
+        payload: { statementIds, markdown },
+        progress: 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", analysisEventId);
+
+    await this.transition(instance, "WAITING_PLAN");
+    this.log(instance, "transitioned to WAITING_PLAN", { analysisEventId });
+
+    return { status: "transitioned" };
+  }
+
+  private async createEvent(input: {
+    threadId: string;
+    type: ThreadEventType;
+    agentId?: string;
+    progress?: number;
+    payload?: Record<string, unknown>;
+  }): Promise<string> {
+    const { data, error } = await this.supabase
+      .from("events")
+      .insert({
+        thread_id: input.threadId,
+        type: input.type,
+        agent_id: input.agentId ?? null,
+        progress: input.progress ?? 0,
+        payload: input.payload ?? {},
+      })
+      .select("id")
+      .single();
+
+    if (error || !data) {
+      throw new Error(
+        `Failed to create ${input.type} event: ${error?.message ?? "unknown error"}`,
+      );
+    }
+
+    return data.id;
+  }
+
+  // Returns the output event of the current CREATING_* state: the one an
+  // earlier (failed or interrupted) run of this same state recorded, or a new
+  // one. A reused event is reset to its initial payload so the timeline shows
+  // it as in progress again rather than failed.
+  private async claimStateEvent(
+    instance: AgentInstanceRow,
+    input: {
+      threadId: string;
+      type: ThreadEventType;
+      payload: Record<string, unknown>;
+    },
+  ): Promise<ClaimedEvent> {
+    const statePayload = (instance.state_payload ?? {}) as StatePayload;
+    const pending = statePayload.pendingEvent;
+
+    if (pending?.state === instance.state) {
+      const { data: existing } = await this.supabase
+        .from("events")
+        .select("id, payload")
+        .eq("id", pending.id)
+        .eq("thread_id", input.threadId)
+        .eq("type", input.type)
+        .maybeSingle();
+
+      if (existing) {
+        const payload = (existing.payload ?? {}) as Record<string, unknown>;
+        if (!("error" in payload)) {
+          return { id: existing.id, payload };
+        }
+        await this.supabase
+          .from("events")
+          .update({
+            payload: input.payload,
+            progress: 0,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existing.id);
+        this.log(instance, "retrying on existing event", {
+          eventId: existing.id,
+        });
+        return { id: existing.id, payload: input.payload };
+      }
+    }
+
+    const id = await this.createEvent({
+      threadId: input.threadId,
+      type: input.type,
+      agentId: instance.id,
+      progress: 0,
+      payload: input.payload,
+    });
+
+    await this.supabase
+      .from("agent_instances")
+      .update({
+        state_payload: {
+          ...statePayload,
+          pendingEvent: { state: instance.state, id },
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", instance.id)
+      .eq("state", instance.state);
+
+    return { id, payload: input.payload };
+  }
+
+  private async markEventFailed(
+    eventId: string,
+    payload: Record<string, unknown>,
+  ) {
+    await this.supabase
+      .from("events")
+      .update({
+        payload,
+        progress: 0,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", eventId);
+  }
+
+  // Compare-and-set on the state the run started from: a run working from a
+  // stale snapshot (another run already moved the instance on) must not drag
+  // the instance back. The new payload never carries pendingEvent, so the next
+  // CREATING_* state starts with a fresh event.
+  private async transition(
+    instance: AgentInstanceRow,
+    nextState: PtolemyState,
+    payload: StatePayload = {},
+  ) {
+    const { pendingEvent: _consumed, ...nextPayload } = payload;
+    const { error } = await this.supabase
+      .from("agent_instances")
+      .update({
+        state: nextState,
+        state_payload: nextPayload,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", instance.id)
+      .eq("state", instance.state);
+
+    if (error) {
+      console.error("[Ptolemy] Failed to transition agent:", error);
+    }
+  }
+
+  private async getLastStatementOrderIndex(sessionId: string) {
+    const { data, error } = await this.supabase
+      .from("statements")
+      .select("order_index")
+      .eq("session_id", sessionId)
+      .order("order_index", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error && error.code !== "PGRST116") {
+      console.error("[Ptolemy] Failed to fetch last statement order:", error);
+    }
+
+    return data?.order_index ?? -1;
+  }
+
+  private async getParticipantCount(sessionId: string): Promise<number> {
+    const { error, count } = await this.supabase
+      .from("participants")
+      .select("user_id", { count: "exact", head: true })
+      .eq("session_id", sessionId);
+
+    if (error) {
+      console.error("[Ptolemy] Failed to count participants:", error);
+      return 0;
+    }
+
+    return count ?? 0;
+  }
+
+  private async getParticipantReflections(
+    sessionId: string,
+  ): Promise<ParticipantReflectionInput[]> {
+    const { data, error } = await this.supabase
+      .from("participant_reflections")
+      .select(
+        `
+          text,
+          submitted_at,
+          participant:participants(name)
+        `,
+      )
+      .eq("session_id", sessionId)
+      .order("submitted_at", { ascending: true });
+
+    if (error) {
+      console.error("[Ptolemy] Failed to load participant reflections:", error);
+      return [];
+    }
+
+    if (!data) {
+      return [];
+    }
+
+    const reflections: ParticipantReflectionInput[] = [];
+
+    for (const row of data) {
+      const text = typeof row.text === "string" ? row.text.trim() : "";
+      if (!text) {
+        continue;
+      }
+
+      const participant = row.participant as
+        | { name?: string | null }
+        | null
+        | undefined;
+      const submittedAtRaw =
+        typeof row.submitted_at === "string"
+          ? row.submitted_at
+          : row.submitted_at instanceof Date
+            ? row.submitted_at.toISOString()
+            : undefined;
+      const submittedAt =
+        submittedAtRaw && submittedAtRaw.length > 0
+          ? this.formatTimestamp(submittedAtRaw)
+          : undefined;
+
+      reflections.push({
+        text,
+        name:
+          participant && typeof participant.name === "string"
+            ? participant.name
+            : undefined,
+        submittedAt,
+      });
+    }
+
+    return reflections;
+  }
+
+  private async getLatestEventMarkdown(
+    threadId: string,
+    type: ThreadEventType,
+  ): Promise<string | undefined> {
+    const { data, error } = await this.supabase
+      .from("events")
+      .select("payload")
+      .eq("thread_id", threadId)
+      .eq("type", type)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error && error.code !== "PGRST116") {
+      console.error("[Ptolemy] Failed to load latest event markdown:", error);
+      return undefined;
+    }
+
+    const payload = (data?.payload ?? {}) as { markdown?: string };
+    return typeof payload.markdown === "string" ? payload.markdown : undefined;
+  }
+
+  private async getRecentUserMessages(
+    threadId: string,
+    limit = 3,
+  ): Promise<string[]> {
+    const { data, error } = await this.supabase
+      .from("events")
+      .select("payload")
+      .eq("thread_id", threadId)
+      .eq("type", "user_message")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error("[Ptolemy] Failed to load recent user messages:", error);
+      return [];
+    }
+
+    const messages =
+      data
+        ?.map((row) => {
+          const payload = row.payload as { markdown?: string } | null;
+          return typeof payload?.markdown === "string"
+            ? payload.markdown
+            : null;
+        })
+        .filter((message): message is string => Boolean(message)) ?? [];
+
+    return messages.reverse();
+  }
+
+  private buildStatementStats(
+    statements: Array<{ id: string; text: string }>,
+    responses: Array<{
+      statement_id: string;
+      value: number | null;
+      response_type?: string;
+      text_response?: string | null;
+      participant_user_id?: string;
+    }>,
+    participantNameMap?: Map<string, string>,
+  ): StatementStat[] {
+    const responseMap = new Map<
+      string,
+      Array<{
+        value: number | null;
+        response_type?: string;
+        text_response?: string | null;
+        participant_user_id?: string;
+      }>
+    >();
+    responses.forEach((response) => {
+      const list = responseMap.get(response.statement_id) ?? [];
+      list.push(response);
+      responseMap.set(response.statement_id, list);
+    });
+
+    return statements.map((statement) => {
+      const statementResponses =
+        responseMap.get(statement.id) ??
+        ([] as Array<{
+          value: number | null;
+          response_type?: string;
+          text_response?: string | null;
+          participant_user_id?: string;
+        }>);
+      const scaleResponses = statementResponses.filter(
+        (response) => response.response_type !== "free_text",
+      );
+      const freeTextResponses = statementResponses.filter(
+        (response) => response.response_type === "free_text",
+      );
+      const totalCount = scaleResponses.length;
+      const counts = {
+        strongYes: 0,
+        yes: 0,
+        dontKnow: 0,
+        no: 0,
+        strongNo: 0,
+      };
+
+      const participantResponses = scaleResponses.map((response) => {
+        const participantId = response.participant_user_id;
+        const participantName = participantId
+          ? (participantNameMap?.get(participantId) ?? truncate(participantId))
+          : "Unknown";
+
+        switch (response.value ?? 0) {
+          case 2:
+            counts.strongYes++;
+            break;
+          case 1:
+            counts.yes++;
+            break;
+          case 0:
+            counts.dontKnow++;
+            break;
+          case -1:
+            counts.no++;
+            break;
+          case -2:
+            counts.strongNo++;
+            break;
+          default:
+            break;
+        }
+        return {
+          participantId: participantId ?? "unknown",
+          participantName,
+          value: response.value ?? 0,
+        };
+      });
+
+      const toPercent = (count: number) =>
+        totalCount > 0 ? Math.round((count / totalCount) * 1000) / 10 : 0;
+
+      return {
+        text: statement.text,
+        totalCount,
+        distribution: {
+          strongYes: toPercent(counts.strongYes),
+          yes: toPercent(counts.yes),
+          dontKnow: toPercent(counts.dontKnow),
+          no: toPercent(counts.no),
+          strongNo: toPercent(counts.strongNo),
+        },
+        participantResponses,
+        freeTextResponses: freeTextResponses
+          .filter((entry) => Boolean(entry.text_response))
+          .map((entry) => {
+            const participantId = entry.participant_user_id;
+            return {
+              participantId: participantId ?? "unknown",
+              participantName: participantId
+                ? (participantNameMap?.get(participantId) ??
+                  truncate(participantId))
+                : "Unknown",
+              text: entry.text_response ?? "",
+            };
+          }),
+      };
+    });
+  }
+
+  private async getEventThreadContext(threadId: string): Promise<string> {
+    const { data: events, error } = await this.supabase
+      .from("events")
+      .select(
+        "id, type, agent_id, user_id, progress, payload, order_index, created_at",
+      )
+      .eq("thread_id", threadId)
+      .order("order_index", { ascending: true });
+
+    if (error) {
+      console.error("[Ptolemy] Failed to load events for context:", error);
+      return "(failed to load event history)";
+    }
+
+    if (!events || events.length === 0) {
+      return "(no events yet)";
+    }
+
+    const statementIds = new Set<string>();
+    events.forEach((event) => {
+      const payload = (event.payload ?? {}) as { statementIds?: string[] };
+      if (Array.isArray(payload.statementIds)) {
+        for (const id of payload.statementIds) {
+          statementIds.add(id);
+        }
+      }
+    });
+
+    let statements: { id: string; text: string }[] = [];
+    if (statementIds.size > 0) {
+      const { data: statementRows, error: statementsError } =
+        await this.supabase
+          .from("statements")
+          .select("id, text")
+          .in("id", Array.from(statementIds));
+      if (statementsError) {
+        console.error(
+          "[Ptolemy] Failed to load statements for context:",
+          statementsError,
+        );
+      } else if (statementRows) {
+        statements = statementRows;
+      }
+    }
+
+    let responses: {
+      statement_id: string;
+      value: number | null;
+      response_type?: string;
+      text_response?: string | null;
+      participant_user_id?: string;
+    }[] = [];
+    if (statementIds.size > 0) {
+      const { data: responseRows, error: responsesError } = await this.supabase
+        .from("responses")
+        .select(
+          "statement_id, value, participant_user_id, response_type, text_response",
+        )
+        .in("statement_id", Array.from(statementIds));
+      if (responsesError) {
+        console.error(
+          "[Ptolemy] Failed to load responses for context:",
+          responsesError,
+        );
+      } else if (responseRows) {
+        responses = responseRows;
+      }
+    }
+
+    const stats = this.buildStatementStats(statements, responses);
+    const statsById = new Map<string, StatementStat>();
+    statements.forEach((statement, index) => {
+      const stat = stats[index];
+      if (stat) {
+        statsById.set(statement.id, stat);
+      }
+    });
+    const statementTextById = new Map(
+      statements.map((statement) => [statement.id, statement.text]),
+    );
+
+    const lines: string[] = ["<event_thread_history>"];
+    events.forEach((event) => {
+      const tagName = event.type ?? "event";
+      const attributes = [
+        event.created_at
+          ? `created_at="${this.formatTimestamp(event.created_at)}"`
+          : null,
+        event.user_id ? `user="${truncate(event.user_id)}"` : null,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const openTag =
+        attributes.length > 0 ? `<${tagName} ${attributes}>` : `<${tagName}>`;
+      lines.push(this.indent(openTag, 1));
+
+      const payload = (event.payload ?? {}) as {
+        markdown?: string;
+        statementIds?: string[];
+        error?: string;
+      };
+
+      if (payload.error) {
+        lines.push(this.indent(`<error>${payload.error}</error>`, 2));
+      }
+
+      if (
+        Array.isArray(payload.statementIds) &&
+        payload.statementIds.length > 0
+      ) {
+        lines.push(
+          this.indent(`<statements count="${payload.statementIds.length}">`, 2),
+        );
+        payload.statementIds.forEach((statementId, idx) => {
+          const text = statementTextById.get(statementId) ?? "(text not found)";
+          lines.push(
+            this.indent(
+              `<statement id="${statementId}" index="${idx + 1}">`,
+              3,
+            ),
+          );
+          lines.push(this.indent(`<text>${text}</text>`, 4));
+          const stat = statsById.get(statementId);
+          if (stat) {
+            lines.push(this.indent(`responses total=${stat.totalCount}`, 4));
+            lines.push(
+              this.indent(`strong_yes=${stat.distribution.strongYes}%`, 5),
+            );
+            lines.push(this.indent(`yes=${stat.distribution.yes}%`, 5));
+            lines.push(
+              this.indent(`dont_know=${stat.distribution.dontKnow}%`, 5),
+            );
+            lines.push(this.indent(`no=${stat.distribution.no}%`, 5));
+            lines.push(
+              this.indent(`strong_no=${stat.distribution.strongNo}%`, 5),
+            );
+            if (stat.freeTextResponses.length > 0) {
+              lines.push(
+                this.indent(
+                  `free_text_count=${stat.freeTextResponses.length}`,
+                  4,
+                ),
+              );
+              stat.freeTextResponses.slice(0, 3).forEach((entry, entryIdx) => {
+                const participantLabel = entry.participantId
+                  ? truncate(entry.participantId)
+                  : "unknown";
+                lines.push(
+                  this.indent(
+                    // Participant-authored → isolated as data (audit H1).
+                    `<free_text idx="${entryIdx + 1}" participant="${participantLabel}">${wrapUntrusted(entry.text, { kind: "free_text" })}</free_text>`,
+                    5,
+                  ),
+                );
+              });
+            }
+          }
+          lines.push(this.indent("</statement>", 3));
+        });
+        lines.push(this.indent("</statements>", 2));
+      }
+
+      if (payload.markdown && payload.markdown.trim().length > 0) {
+        lines.push(this.indent('<content format="markdown">', 2));
+        lines.push(this.indentBlock(payload.markdown.trim(), 3));
+        lines.push(this.indent("</content>", 2));
+      }
+
+      lines.push(this.indent(`</${tagName}>`, 1));
+    });
+
+    lines.push("</event_thread_history>");
+
+    return lines.join("\n");
+  }
+
+  private formatTimestamp(value?: string | null) {
+    if (!value) return "";
+    const match = value.match(
+      /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?$/,
+    );
+    if (match) {
+      return `${match[1]} ${match[2]}`;
+    }
+    return value.replace("T", " ").slice(0, 16);
+  }
+
+  private indent(text: string, level = 1) {
+    const pad = "  ".repeat(level);
+    return `${pad}${text}`;
+  }
+
+  private indentBlock(text: string, level = 1) {
+    return text
+      .split("\n")
+      .map((line) => this.indent(line, level))
+      .join("\n");
+  }
+
+  private log(
+    instance: AgentInstanceRow,
+    message: string,
+    meta?: Record<string, unknown>,
+  ) {
+    const prefix = `[Ptolemy:${truncate(instance.id)}:${instance.state}]`;
+    if (meta) {
+      console.log(prefix, message, meta);
+    } else {
+      console.log(prefix, message);
+    }
+  }
+
+  private warn(
+    instance: AgentInstanceRow,
+    message: string,
+    meta?: Record<string, unknown>,
+  ) {
+    const prefix = `[Ptolemy:${truncate(instance.id)}:${instance.state}]`;
+    if (meta) {
+      console.warn(prefix, message, meta);
+    } else {
+      console.warn(prefix, message);
+    }
+  }
+
+  private stringifyError(error: unknown) {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    if (typeof error === "string") {
+      return error;
+    }
+    return JSON.stringify(error);
+  }
+}

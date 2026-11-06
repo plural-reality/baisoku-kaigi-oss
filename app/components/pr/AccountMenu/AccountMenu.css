@@ -1,0 +1,7 @@
+/* アバター。製品の主色（墨）の丸に頭文字。大きさは --pr-avatar-size で製品ごとに変えられる */
+.pr-avatar { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: var(--pr-avatar-size, 32px); height: var(--pr-avatar-size, 32px); padding: 0; border: 0; border-radius: var(--radius-pill);
+  background: var(--accent-ui); color: var(--accent-fg); font-family: var(--font-sans); font-size: var(--text-caption); font-weight: var(--weight-medium);
+  cursor: pointer; transition: opacity var(--duration-fast) var(--ease); }
+.pr-avatar:hover { opacity: 0.9; }
+.pr-avatar:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }

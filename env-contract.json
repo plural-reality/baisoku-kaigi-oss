@@ -1,0 +1,39 @@
+{
+  "vars": {
+    "NEXT_PUBLIC_SUPABASE_URL": { "required": true, "secret": false },
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": { "required": true, "secret": false },
+    "SUPABASE_SERVICE_ROLE_KEY": { "required": true, "secret": true },
+    "OPENROUTER_API_KEY": { "required": true, "secret": true },
+    "WORKOS_CLIENT_ID": { "required": false, "secret": false },
+    "WORKOS_API_KEY": { "required": false, "secret": true },
+    "WORKOS_COOKIE_PASSWORD": { "required": false, "secret": true },
+    "NEXT_PUBLIC_WORKOS_REDIRECT_URI": { "required": false, "secret": false },
+    "WORKOS_LEGACY_CLAIM": { "required": false, "secret": false },
+    "OPENROUTER_API_URL": { "required": false, "secret": false },
+    "AUTH_SUPABASE_SERVICE_ROLE_KEY": { "required": false, "secret": true },
+    "NEXT_PUBLIC_AUTH_SUPABASE_URL": { "required": false, "secret": false },
+    "NEXT_PUBLIC_AUTH_SUPABASE_ANON_KEY": {
+      "required": false,
+      "secret": false
+    },
+    "NEXT_PUBLIC_SENTRY_DSN": { "required": false, "secret": false },
+    "NEXT_PUBLIC_SENTRY_ENVIRONMENT": { "required": false, "secret": false },
+    "NEXT_PUBLIC_SITE_URL": { "required": false, "secret": false },
+    "NEXT_PUBLIC_UMAMI_URL": { "required": false, "secret": false },
+    "NEXT_PUBLIC_UMAMI_WEBSITE_ID": { "required": false, "secret": false },
+    "PARTICIPANT_TOKEN_SECRET": { "required": false, "secret": true },
+    "PARTICIPANT_TOKEN_ENFORCE": { "required": false, "secret": false },
+    "PARTICIPANT_TOKEN_RATE_LIMIT_PER_MIN": {
+      "required": false,
+      "secret": false
+    },
+    "USER_ALIAS_SECRET": { "required": false, "secret": true },
+    "CSP_MODE": { "required": false, "secret": false },
+    "EMBED_FRAME_ANCESTORS": { "required": false, "secret": false },
+    "NEXT_SERVER_ACTIONS_ENCRYPTION_KEY": { "required": false, "secret": true }
+  },
+  "alternatives": [],
+  "allOrNone": [
+    ["WORKOS_CLIENT_ID", "WORKOS_API_KEY", "WORKOS_COOKIE_PASSWORD"]
+  ]
+}

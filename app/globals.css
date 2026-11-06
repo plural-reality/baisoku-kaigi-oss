@@ -1,0 +1,469 @@
+@import "tailwindcss";
+@import "github-markdown-css/github-markdown-light.css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Plural Reality 製品トークン（製品の色は全製品で墨の 1 色）。
+     正本は _brand-unification-2026-10-09/IMPLEMENTATION.md §2 と、nix-darwin の
+     plural-reality-design-system/tokens.css。値を変えるときは両方を同時に変える。 */
+  --bg: #ffffff;
+  --surface-1: #f3f3f3;
+  --surface-2: #ebebeb;
+  --border: #e5e5e5;
+  --fg: #111111;
+  --fg-muted: #525252;
+  --accent-product: #111111; /* 製品の主色（墨。ライトは --fg、ダークは白）。1 色だけ */
+  --accent-product-fg: #ffffff;
+  --radius-ui: 8px; /* 製品のボタン・入力欄・カード・モーダル */
+
+  /* shadcn の変数へ写す（§2） */
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card: #ffffff;
+  --card-foreground: var(--fg);
+  --popover: #ffffff;
+  --popover-foreground: var(--fg);
+  --primary: var(--accent-product);
+  --primary-foreground: var(--accent-product-fg);
+  --secondary: var(--surface-1);
+  --secondary-foreground: var(--fg);
+  --muted: var(--surface-1);
+  --muted-foreground: var(--fg-muted);
+  --accent: var(--surface-1); /* shadcn の accent は hover の面（製品の主色ではない） */
+  --accent-foreground: var(--fg);
+  --destructive: #cd4246; /* 塗りの上の文字は白（4.7:1） */
+  --destructive-foreground: #ffffff;
+  --input: var(--border);
+  --ring: var(--accent-product);
+  --radius: var(--radius-ui);
+
+  /* Chart colors for data visualization */
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+
+  /* 状態の色（札・通知だけで使う。tokens.css の --success/--warning/--danger/--info と同じ値） */
+  --success: #15803d;
+  --success-soft: #dcfce7;
+  --warning: #a16207;
+  --warning-soft: #fef9c3;
+  --danger: #b91c1c;
+  --danger-soft: #fee2e2;
+  --info: #1d4ed8;
+  --info-soft: #dbeafe;
+
+  /* Status colors for reports and sessions */
+  --status-pending: hsl(43 74% 66%); /* amber-500 */
+  --status-pending-foreground: hsl(43 74% 30%);
+  --status-generating: hsl(199 89% 48%); /* sky-500 */
+  --status-generating-foreground: hsl(199 89% 20%);
+  --status-completed: hsl(142 71% 45%); /* emerald-500 */
+  --status-completed-foreground: hsl(142 71% 20%);
+  --status-failed: hsl(0 72% 51%); /* rose-500 */
+  --status-failed-foreground: hsl(0 72% 25%);
+
+  /* Sentiment colors for user responses */
+  --sentiment-neutral: hsl(43 74% 66%); /* amber */
+  --sentiment-neutral-foreground: hsl(43 74% 30%);
+  --sentiment-positive: hsl(199 89% 48%); /* sky */
+  --sentiment-positive-foreground: hsl(199 89% 20%);
+  --sentiment-strong-positive: hsl(142 71% 45%); /* emerald */
+  --sentiment-strong-positive-foreground: hsl(142 71% 20%);
+  --sentiment-negative: hsl(0 72% 51%); /* rose */
+  --sentiment-negative-foreground: hsl(0 72% 25%);
+
+  /* Neutral colors for general UI */
+  --neutral: hsl(215.4 16.3% 46.9%); /* slate-600 */
+  --neutral-foreground: hsl(210 40% 98%);
+
+  /* Sidebar colors */
+  --sidebar: #ffffff;
+  --sidebar-foreground: var(--fg);
+  --sidebar-primary: var(--accent-product);
+  --sidebar-primary-foreground: var(--accent-product-fg);
+  --sidebar-accent: var(--surface-1);
+  --sidebar-accent-foreground: var(--fg);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--accent-product);
+}
+
+.dark {
+  --bg: #0e0e10;
+  --surface-1: #1c2127;
+  --surface-2: #252a31;
+  --border: #383e47;
+  --fg: #ffffff;
+  --fg-muted: #d4d9df;
+  --accent-product: #ffffff; /* ダークの主色は白、その上の文字は墨 */
+  --accent-product-fg: #111111;
+
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card: var(--surface-1);
+  --card-foreground: var(--fg);
+  --popover: var(--surface-1);
+  --popover-foreground: var(--fg);
+
+  --primary: var(--accent-product);
+  --primary-foreground: var(--accent-product-fg);
+
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--fg);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--fg-muted);
+  --accent: var(--surface-2);
+  --accent-foreground: var(--fg);
+
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  --input: var(--border);
+  --ring: var(--accent-product);
+
+  /* Chart colors for data visualization */
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+
+  /* 状態の色（ダーク） */
+  --success: #4ade80;
+  --success-soft: rgb(34 197 94 / 0.16);
+  --warning: #facc15;
+  --warning-soft: rgb(234 179 8 / 0.16);
+  --danger: #f87171;
+  --danger-soft: rgb(239 68 68 / 0.16);
+  --info: #60a5fa;
+  --info-soft: rgb(59 130 246 / 0.16);
+
+  /* Status colors for reports and sessions */
+  --status-pending: hsl(43 74% 60%); /* amber, lighter for dark */
+  --status-pending-foreground: hsl(43 74% 90%);
+  --status-generating: hsl(199 89% 55%); /* sky, lighter for dark */
+  --status-generating-foreground: hsl(199 89% 90%);
+  --status-completed: hsl(142 71% 50%); /* emerald, lighter for dark */
+  --status-completed-foreground: hsl(142 71% 90%);
+  --status-failed: hsl(0 72% 58%); /* rose, lighter for dark */
+  --status-failed-foreground: hsl(0 72% 95%);
+
+  /* Sentiment colors for user responses */
+  --sentiment-neutral: hsl(43 74% 60%); /* amber */
+  --sentiment-neutral-foreground: hsl(43 74% 90%);
+  --sentiment-positive: hsl(199 89% 55%); /* sky */
+  --sentiment-positive-foreground: hsl(199 89% 90%);
+  --sentiment-strong-positive: hsl(142 71% 50%); /* emerald */
+  --sentiment-strong-positive-foreground: hsl(142 71% 90%);
+  --sentiment-negative: hsl(0 72% 58%); /* rose */
+  --sentiment-negative-foreground: hsl(0 72% 95%);
+
+  /* Neutral colors for general UI */
+  --neutral: hsl(215 20.2% 65.1%); /* slate-400 for dark mode */
+  --neutral-foreground: hsl(222.2 47.4% 11.2%);
+  --sidebar: var(--surface-1);
+  --sidebar-foreground: var(--fg);
+  --sidebar-primary: var(--accent-product);
+  --sidebar-primary-foreground: var(--accent-product-fg);
+  --sidebar-accent: var(--surface-2);
+  --sidebar-accent-foreground: var(--fg);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--accent-product);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-feature-settings:
+    "rlig" 1,
+    "calt" 1;
+}
+
+.markdown-body {
+  background-color: transparent;
+}
+
+/* Tailwind v4 Preflight resets list-style to none. Restore for markdown renders. */
+.markdown-body ul {
+  list-style-type: disc;
+  padding-left: 2em;
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+.markdown-body ol {
+  list-style-type: decimal;
+  padding-left: 2em;
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+.markdown-body ul ul {
+  list-style-type: circle;
+}
+
+.markdown-body ul ul ul {
+  list-style-type: square;
+}
+
+.markdown-body li + li {
+  margin-top: 0.25em;
+}
+
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
+@keyframes question-change {
+  from {
+    opacity: 0.88;
+    transform: scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.question-change {
+  animation: question-change 320ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+/* Dark mode styles for markdown content */
+.dark .markdown-body {
+  color-scheme: dark;
+  --color-fg-default: #e6edf3;
+  --color-fg-muted: #8b949e;
+  --color-fg-subtle: #6e7681;
+  --color-canvas-default: transparent;
+  --color-canvas-subtle: #161b22;
+  --color-border-default: #30363d;
+  --color-border-muted: #21262d;
+  --color-neutral-muted: rgba(110, 118, 129, 0.4);
+  --color-accent-fg: #58a6ff;
+  --color-accent-emphasis: #1f6feb;
+  --color-danger-fg: #f85149;
+  --color-attention-fg: #d29922;
+  --color-success-fg: #3fb950;
+  --color-attention-subtle: rgba(187, 128, 9, 0.15);
+  --color-danger-subtle: rgba(248, 81, 73, 0.15);
+  --color-success-subtle: rgba(46, 160, 67, 0.15);
+}
+
+.dark .markdown-body,
+.dark .markdown-body p,
+.dark .markdown-body h1,
+.dark .markdown-body h2,
+.dark .markdown-body h3,
+.dark .markdown-body h4,
+.dark .markdown-body h5,
+.dark .markdown-body h6,
+.dark .markdown-body li,
+.dark .markdown-body strong,
+.dark .markdown-body em,
+.dark .markdown-body code,
+.dark .markdown-body pre {
+  color: #e6edf3;
+}
+
+.dark .markdown-body a {
+  color: #58a6ff;
+}
+
+.dark .markdown-body code {
+  background-color: rgba(110, 118, 129, 0.2);
+}
+
+.dark .markdown-body pre {
+  background-color: #161b22;
+}
+
+.dark .markdown-body blockquote {
+  color: #8b949e;
+  border-left-color: #30363d;
+}
+
+.dark .markdown-body table tr {
+  background-color: transparent;
+  border-top-color: #30363d;
+}
+
+.dark .markdown-body table th,
+.dark .markdown-body table td {
+  border-color: #30363d;
+}
+
+@theme inline {
+  /* A2 / round 2 `font`: 欧文 = Geist、和文 = Noto Sans JP。@fontsource-variable で自己ホスト
+     （app/layout.tsx で import。CSP は font-src 'self'）。値は IMPLEMENTATION.md §2。 */
+  --font-sans:
+    "Geist Variable", "Noto Sans JP Variable", "Hiragino Kaku Gothic ProN",
+    "Hiragino Sans", system-ui, sans-serif;
+  --font-mono:
+    "JetBrains Mono Variable", "Noto Sans JP Variable", ui-monospace,
+    SFMono-Regular, Menlo, monospace;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface-1: var(--surface-1);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* iOS Safari zooms the page when a focused field's text is under 16px. On touch screens every field
+   is at least 16px. In the base layer with !important: important declarations in an earlier layer
+   win over later ones, so this beats text-sm, md:text-sm and even !text-sm utilities. */
+@layer base {
+  @media (pointer: coarse) {
+    :where(input:not([type="checkbox"], [type="radio"], [type="range"]), textarea, select) {
+      font-size: max(16px, 1em) !important;
+    }
+  }
+}
+
+/* viewport-fit=cover (root layout): the body's background fills the safe areas (the Duo's status
+   column, the notch in landscape) while its padding keeps the content out of them. Read the insets
+   through these variables so a preview can stand in a value. */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+body {
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+  /* The last row of the page (the footer) stays above the home indicator. */
+  padding-bottom: var(--safe-bottom);
+}
+
+/* Top inset (the status bar, when the page is drawn under it): the body starts below it, and an
+   opaque strip in the page colour sits there so content scrolling up never runs under the clock.
+   Headers that stick to the top stop below the strip (top: var(--safe-top)). */
+body {
+  padding-top: var(--safe-top);
+}
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 2147483000;
+  height: var(--safe-top);
+  background: var(--background);
+  pointer-events: none;
+}
+
+/* design-system の部品（app/components/pr/、写し）が読む値。倍速会議は tokens.css を写していない
+   （2026-10-22 に値の寄せ #401 を取り消した）ので、部品が要る分だけ、今の見た目の値で置く。
+   名前と段階は design-system の tokens/tokens.css と同じ。 */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+  --space-6: 48px;
+  --space-7: 64px;
+  --text-body: 1rem;
+  --text-caption: 0.875rem;
+  --text-label: 0.75rem;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --radius-control: var(--radius-ui);
+  --radius-pill: 9999px;
+  --duration-fast: 150ms;
+  --ease: cubic-bezier(0, 0, 0.2, 1);
+  --accent-ui: var(--accent-product);
+  --accent-fg: var(--accent-product-fg);
+  --fg-subtle: #737373;
+  --surface-3: #e0e0e0;
+}
+
+.dark {
+  --fg-subtle: #8f99a8;
+  --surface-3: #2f343c;
+}

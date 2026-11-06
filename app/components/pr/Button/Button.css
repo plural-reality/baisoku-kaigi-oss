@@ -1,0 +1,45 @@
+/* 値は tokens/tokens.css だけを参照する */
+.pr-button { box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  min-width: 88px; padding: 0 var(--space-4);
+  font-family: var(--font-sans); font-weight: var(--weight-medium); line-height: 1;
+  border: 1px solid transparent; border-radius: var(--radius-control);
+  cursor: pointer; white-space: nowrap;
+  transition: background-color var(--duration-fast) var(--ease), color var(--duration-fast) var(--ease), border-color var(--duration-fast) var(--ease);
+}
+.pr-button--sm { height: 32px; font-size: var(--text-label); min-width: 0; padding: 0 var(--space-3); }
+.pr-button--md { height: 40px; font-size: var(--text-caption); }
+.pr-button--lg { height: 48px; font-size: var(--text-body); padding: 0 var(--space-5); }
+.pr-button--full { width: 100%; }
+
+/* 主: 反転（白い面で墨地・黒い面で白地）。会社の層も製品も同じ */
+.pr-button--primary { background: var(--accent-ui); border-color: var(--accent-ui); color: var(--accent-fg); }
+.pr-button--primary:hover:not(:disabled) { background: var(--accent-hover, var(--fg-muted)); border-color: var(--accent-hover, var(--fg-muted)); }
+
+/* 副: 枠だけ */
+.pr-button--secondary { background: transparent; border-color: var(--fg); color: var(--fg); }
+.pr-button--secondary:hover:not(:disabled) { background: var(--surface-1); }
+
+/* 文字だけ: 表の中・数値を伴う操作・並びの最後 */
+.pr-button--ghost { background: transparent; color: var(--fg); }
+.pr-button--ghost:hover:not(:disabled) { background: var(--surface-1); }
+
+/* 破壊的な操作: 確認ダイアログの中だけで使う */
+.pr-button--danger { background: var(--destructive); border-color: var(--destructive); color: var(--destructive-fg); }
+.pr-button--danger:hover:not(:disabled) { filter: brightness(0.92); }
+
+.pr-button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+/* 無効: 不透明度ではなく色で示す（文字の濃さは3段のトークンだけ） */
+.pr-button:disabled:not([aria-busy="true"]) { cursor: not-allowed; background: var(--surface-2); border-color: var(--surface-2); color: var(--fg-subtle); }
+.pr-button--ghost:disabled:not([aria-busy="true"]) { background: transparent; border-color: transparent; }
+.pr-button[aria-busy="true"] { cursor: progress; }
+
+.pr-button__icon { display: inline-flex; width: 16px; height: 16px; }
+.pr-button__icon > svg { width: 100%; height: 100%; }
+.pr-button__spinner {
+  width: 14px; height: 14px; border-radius: var(--radius-pill);
+  border: 2px solid currentColor; border-right-color: transparent;
+  animation: pr-spin 0.8s linear infinite;
+}
+@keyframes pr-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pr-button__spinner { animation-duration: 2.4s; } }

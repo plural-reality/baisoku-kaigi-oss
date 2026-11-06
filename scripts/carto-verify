@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+#
+# carto-verify — project-aware pre-commit verification.
+#
+# Runs the repo's verification battery, suppresses verbose build chatter,
+# and emits ONE compact JSON verdict on stdout. Exits non-zero if any stage
+# fails. Fast stages (lint, typecheck, unit tests, next build) run by default;
+# the slow Nix derivation builds (frontendNix, agentNix) are opt-in via --nix.
+#
+# Output (single line):
+#   {"lint":"pass|fail|skip","typecheck":...,"unitTests":...,"nextBuild":...,
+#    "frontendNix":...,"agentNix":...,"firstError":<string|null>,"ok":true|false}
+#
+# Conventions match scripts/branch-status.sh (set -euo, case-based args,
+# printf). Exception: this script uses -uo (NOT -e) because each stage's
+# failure is handled explicitly so we can still emit the JSON verdict.
+
+set -uo pipefail
+
+# Resolve repo root from the script's own location so npm/nix/tsc run from the
+# correct directory regardless of the caller's CWD.
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+
+run_nix=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --nix)
+      run_nix=true
+      ;;
+    --help|-h)
+      cat >&2 <<'USAGE'
+carto-verify — run the project's verification battery, emit one JSON verdict.
+
+Usage: scripts/carto-verify [--nix] [--help]
+
+Stages (default = fast path):
+  lint         biome check
+  typecheck    tsc --noEmit   (informational: reported, but NOT part of ok —
+               stricter than the repo gate; surfaces latent test-file type debt)
+  unitTests    vitest run
+  nextBuild    next build
+
+Opt-in (slow, behind --nix):
+  frontendNix  nix build .#cartographer-frontend
+  agentNix     nix build .#cartographer-agent
+
+Output: one line of JSON on stdout. Progress notes go to stderr.
+Exit code is non-zero when ok=false.
+USAGE
+      exit 0
+      ;;
+    *)
+      printf 'Unknown option: %s\n' "$arg" >&2
+      printf 'Usage: %s [--nix] [--help]\n' "$0" >&2
+      exit 2
+      ;;
+  esac
+done
+
+# jq assembles the final verdict; without it the script would otherwise finish
+# with no JSON on stdout yet a success-looking exit. Fail loudly and early.
+if ! command -v jq >/dev/null 2>&1; then
+  printf '{"ok":false,"error":"jq not found on PATH"}\n'
+  exit 2
+fi
+
+# Single ephemeral scratchpad for per-stage captured output; vanishes on exit.
+work_dir="$(mktemp -d "${TMPDIR:-/tmp}/carto-verify.XXXXXX")"
+trap 'rm -rf "$work_dir"' EXIT
+
+# Stage verdicts.
+v_lint="skip"
+v_typecheck="skip"
+v_unitTests="skip"
+v_nextBuild="skip"
+v_frontendNix="skip"
+v_agentNix="skip"
+
+# First failing stage's captured output (first failure wins). Empty => null.
+first_error=""
+
+# run_stage <verdict_var_name> <label> <cmd...>
+# Runs cmd from repo_root, capturing stdout+stderr to a temp file. Sets the
+# named verdict var to pass|fail. On the FIRST failure, records the tail of the
+# captured output into first_error.
+run_stage() {
+  local var_name="$1"
+  local label="$2"
+  shift 2
+
+  local log_file="${work_dir}/${label}.log"
+  printf '[carto-verify] %s ... ' "$label" >&2
+
+  if ( cd "$repo_root" && "$@" ) >"$log_file" 2>&1; then
+    printf 'pass\n' >&2
+    printf -v "$var_name" 'pass'
+    return 0
+  fi
+
+  printf 'fail\n' >&2
+  printf -v "$var_name" 'fail'
+
+  # typecheck is informational only (see verdict section): a strict full-project
+  # tsc surfaces latent errors the repo's gate (lint+unit+build) does not check,
+  # so it must not claim the gate's firstError slot.
+  if [ "$label" = "typecheck" ]; then
+    return 1
+  fi
+
+  # First failure wins: only capture if firstError is still empty.
+  if [ -z "$first_error" ]; then
+    # Prefer the tail (where errors usually surface), then take the leading
+    # ~400 chars of that tail for a compact, relevant excerpt.
+    local excerpt
+    excerpt="$(tail -n 40 "$log_file" | head -c 400)"
+    first_error="${label}: ${excerpt}"
+  fi
+  return 1
+}
+
+# --- Fast stages (always run) ---
+
+run_stage v_lint "lint" npm run lint
+run_stage v_typecheck "typecheck" npx --no-install tsc --noEmit
+run_stage v_unitTests "unitTests" npm run test:unit
+run_stage v_nextBuild "nextBuild" npm run build
+
+# --- Slow Nix derivations (opt-in) ---
+
+if [ "$run_nix" = true ]; then
+  run_stage v_frontendNix "frontendNix" nix build --no-link ".#cartographer-frontend"
+  run_stage v_agentNix "agentNix" nix build --no-link ".#cartographer-agent"
+else
+  printf '[carto-verify] frontendNix ... skip (pass --nix to enable)\n' >&2
+  printf '[carto-verify] agentNix ... skip (pass --nix to enable)\n' >&2
+fi
+
+# --- Verdict ---
+
+# ok mirrors the repo's canonical green bar: `npm run test` = lint + test:unit +
+# build (+ the Nix derivations when --nix). typecheck is reported but EXCLUDED
+# from ok — standalone `tsc --noEmit` is stricter than any repo gate (it includes
+# test files; next build excludes them and Nix sets ignoreBuildErrors), so a
+# typecheck=fail is a "latent type debt" signal, not a gate failure.
+ok=true
+for verdict in \
+  "$v_lint" "$v_unitTests" "$v_nextBuild" \
+  "$v_frontendNix" "$v_agentNix"; do
+  [ "$verdict" = "fail" ] && ok=false
+done
+
+# Assemble JSON with jq. firstError is a real null when empty.
+jq -cn \
+  --arg lint "$v_lint" \
+  --arg typecheck "$v_typecheck" \
+  --arg unitTests "$v_unitTests" \
+  --arg nextBuild "$v_nextBuild" \
+  --arg frontendNix "$v_frontendNix" \
+  --arg agentNix "$v_agentNix" \
+  --arg firstError "$first_error" \
+  --argjson ok "$ok" \
+  '{
+    lint: $lint,
+    typecheck: $typecheck,
+    unitTests: $unitTests,
+    nextBuild: $nextBuild,
+    frontendNix: $frontendNix,
+    agentNix: $agentNix,
+    firstError: (if $firstError == "" then null else $firstError end),
+    ok: $ok
+  }'
+
+[ "$ok" = true ]
