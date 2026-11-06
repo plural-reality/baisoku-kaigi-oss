@@ -17,7 +17,7 @@ jobs:
   i18n:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # No npm cache: on the self-hosted runner, saving it after the job held
       # the only runner for over 30 minutes on a slow uplink (2026-10-22).
       - uses: actions/setup-node@v6
