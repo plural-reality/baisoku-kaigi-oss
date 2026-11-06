@@ -58,7 +58,7 @@ describe("LegalFooter（会社の帯）", () => {
     expect(screen.queryByText("倍速会議について")).not.toBeInTheDocument();
   });
 
-  it("法務リンクは利用規約・プライバシーポリシー（自前）・特定商取引法に基づく表記（HP）の順", () => {
+  it("法務リンクは利用規約・プライバシーポリシー（自前）・特定商取引法に基づく表記（HP）・ソースコード（AGPL-3.0 第13条）の順", () => {
     render(<LegalFooter />);
     const legal = screen.getByRole("navigation", { name: "法務" });
     const links = within(legal).getAllByRole("link");
@@ -66,11 +66,13 @@ describe("LegalFooter（会社の帯）", () => {
       "利用規約",
       "プライバシーポリシー",
       "特定商取引法に基づく表記",
+      "ソースコード (AGPL-3.0)",
     ]);
     expect(links.map((a) => a.getAttribute("href"))).toEqual([
       "/terms",
       "/privacy-policy",
       "https://www.plural-reality.com/tokushoho",
+      "https://github.com/plural-reality/baisoku-kaigi-oss",
     ]);
   });
 

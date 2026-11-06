@@ -10,6 +10,11 @@ export const LEGAL_TOKUSHOHO_URL = "https://www.plural-reality.com/tokushoho";
 export const legalCopyright = (year: number = new Date().getFullYear()) =>
   `© ${year} ${LEGAL_OPERATOR_NAME_EN}`;
 
+// AGPL-3.0 §13: users interacting over the network must be offered the source.
+// A modified deployment points this at its own published source.
+export const LEGAL_SOURCE_CODE_URL =
+  "https://github.com/plural-reality/baisoku-kaigi-oss";
+
 export const LEGAL_CONTACT_EMAIL = "info@plural-reality.com";
 const LEGAL_LAST_UPDATED_ON = new Date(Date.UTC(2026, 2, 10));
 // The frame of a legal page shows the date in the viewer's language; the Japanese
