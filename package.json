@@ -35,7 +35,7 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@sentry/nextjs": "^10.42.0",
     "@supabase/supabase-js": "^2.98.0",
-    "@tailwindcss/typography": "^0.5.19",
+    "@tailwindcss/typography": "^0.5.20",
     "@tanstack/react-table": "^8.21.3",
     "@workos-inc/authkit-nextjs": "^4.5.0",
     "@workos-inc/node": "^10.14.0",
