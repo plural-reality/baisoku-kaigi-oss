@@ -15,6 +15,8 @@ const chromiumUse =
  */
 export default defineConfig({
   testDir: "./tests",
+  // tests/integration holds Vitest suites (vitest.integration.config.ts).
+  testIgnore: ["integration/**"],
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
@@ -22,6 +24,9 @@ export default defineConfig({
   reporter: "html",
   use: {
     baseURL,
+    // The specs assert Japanese copy; the app picks its language from
+    // Accept-Language, so pin it (english-screens.spec.ts overrides it).
+    locale: "ja-JP",
     trace: "on-first-retry",
   },
 
@@ -51,7 +56,9 @@ export default defineConfig({
 
   webServer: startsLocalServer
     ? {
-        command: "npm run dev",
+        // CI builds first (ci.yml) and serves that build: next dev compiles
+        // each route on first request, slower than the specs' timeouts.
+        command: isCI ? "npm run start" : "npm run dev",
         url: baseURL,
         reuseExistingServer: !isCI,
         timeout: 120_000,

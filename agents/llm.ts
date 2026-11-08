@@ -28,7 +28,9 @@ export type ParticipantReflectionInput = {
   submittedAt?: string;
 };
 
-const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_API_URL =
+  process.env.OPENROUTER_API_URL ??
+  "https://openrouter.ai/api/v1/chat/completions";
 const FAST_MODEL = "google/gemini-3.5-flash";
 const ACCURATE_MODEL = "google/gemini-3.1-pro-preview";
 const DEFAULT_MODEL = FAST_MODEL;

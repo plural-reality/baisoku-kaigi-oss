@@ -1,7 +1,8 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 const sessionId = "00000000-0000-0000-0000-000000000e2e";
-const accessToken = "e2e00000-0000-0000-0000-admin00token";
+// admin_access_token of the seeded session (fixtures/seed-e2e.sql)
+const accessToken = "e2e00000-0000-0000-0000-000000000001";
 const adminUrl = `/sessions/${sessionId}/${accessToken}`;
 
 const readMetricCount = async (locator: Locator) => {
@@ -35,8 +36,9 @@ test.describe("Admin Realtime Status", () => {
   }) => {
     test.setTimeout(60_000);
 
-    const adminContext = await browser.newContext();
-    const participantContext = await browser.newContext();
+    // browser.newContext() does not inherit `use.locale` from the config.
+    const adminContext = await browser.newContext({ locale: "ja-JP" });
+    const participantContext = await browser.newContext({ locale: "ja-JP" });
     const adminPage = await adminContext.newPage();
     const participantPage = await participantContext.newPage();
     const participantName = `自動反映-${Date.now()}`;

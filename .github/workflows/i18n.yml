@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   i18n:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       # No npm cache: on the self-hosted runner, saving it after the job held

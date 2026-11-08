@@ -288,7 +288,7 @@
             version = "0.1.0";
             src = ./.;
 
-            npmDepsHash = "sha256-HJV2tBI3+mcNYw8ZZ7QL0649SFDeff4FLTx6puU0los=";
+            npmDepsHash = "sha256-I4nO30IC95bbXnUcLP1T+8t25KYu9NRpHt7jD7TaBU8=";
 
             nativeBuildInputs = [ pkgs.pkg-config ];
             buildInputs = [ pkgs.vips ];
@@ -359,7 +359,7 @@
             version = "0.1.0";
             src = ./.;
 
-            npmDepsHash = "sha256-HJV2tBI3+mcNYw8ZZ7QL0649SFDeff4FLTx6puU0los=";
+            npmDepsHash = "sha256-I4nO30IC95bbXnUcLP1T+8t25KYu9NRpHt7jD7TaBU8=";
 
             npmFlags = [
               "--legacy-peer-deps"

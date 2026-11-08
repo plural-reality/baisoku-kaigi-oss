@@ -7,7 +7,7 @@ on:
 
 jobs:
   lint-and-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -29,7 +29,7 @@ jobs:
           NEXT_PUBLIC_SENTRY_ENVIRONMENT: "ci"
 
   unit-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -54,7 +54,7 @@ jobs:
 
   e2e-tests:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -64,8 +64,17 @@ jobs:
       - run: npm ci
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
-      # Ports away from the usual local dev ones (3000, 8080, 9090): the self-hosted runner is a
-      # developer Mac. The runner stops the stub servers when the job ends.
+      # The specs read a seeded session (tests/e2e/fixtures/seed-e2e.sql) from a
+      # local Supabase started from supabase/config.toml (API 55321, DB 55322).
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.75.0
+      - name: Start Supabase and seed the E2E session
+        run: |
+          supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector,supavisor
+          psql "postgresql://postgres:postgres@127.0.0.1:55322/postgres" -v ON_ERROR_STOP=1 -f tests/e2e/fixtures/seed-e2e.sql
+          supabase status -o env | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=' | tr -d '"' >> "$GITHUB_ENV"
+      # The runner stops the stub servers when the job ends.
       - name: Start stub servers
         run: |
           node tests/e2e/fixtures/haskell-stub.mjs &
@@ -73,13 +82,21 @@ jobs:
         env:
           HASKELL_STUB_PORT: "18080"
           LLM_STUB_PORT: "19090"
+          SUPABASE_URL: ${{ env.API_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.SERVICE_ROLE_KEY }}
+      # Serve a production build: next dev compiles each route on its first
+      # request, which made the first specs time out while joining.
+      - name: Build for E2E
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.API_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.ANON_KEY }}
       - name: Run E2E tests
         run: npx playwright test --project=chromium
         env:
-          NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co"
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: "dummy-key"
-          NEXT_PUBLIC_AUTH_SUPABASE_URL: "https://example.supabase.co"
-          NEXT_PUBLIC_AUTH_SUPABASE_ANON_KEY: "dummy-key"
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.API_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.SERVICE_ROLE_KEY }}
           HASKELL_BACKEND_URL: "http://localhost:18080"
           OPENROUTER_API_URL: "http://localhost:19090/api/v1/chat/completions"
           PORT: "13000"
