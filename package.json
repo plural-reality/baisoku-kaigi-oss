@@ -78,7 +78,7 @@
     "@vitest/coverage-v8": "^4.0.18",
     "jsdom": "^28.1.0",
     "tailwindcss": "^4",
-    "tsx": "^4.20.6",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^4.0.18"
   },
