@@ -7,7 +7,7 @@ on:
 
 jobs:
   lint-and-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -29,7 +29,7 @@ jobs:
           NEXT_PUBLIC_SENTRY_ENVIRONMENT: "ci"
 
   unit-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -54,7 +54,7 @@ jobs:
 
   e2e-tests:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -84,6 +84,13 @@ jobs:
           LLM_STUB_PORT: "19090"
           SUPABASE_URL: ${{ env.API_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ env.SERVICE_ROLE_KEY }}
+      # Serve a production build: next dev compiles each route on its first
+      # request, which made the first specs time out while joining.
+      - name: Build for E2E
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.API_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.ANON_KEY }}
       - name: Run E2E tests
         run: npx playwright test --project=chromium
         env:

@@ -56,7 +56,9 @@ export default defineConfig({
 
   webServer: startsLocalServer
     ? {
-        command: "npm run dev",
+        // CI builds first (ci.yml) and serves that build: next dev compiles
+        // each route on first request, slower than the specs' timeouts.
+        command: isCI ? "npm run start" : "npm run dev",
         url: baseURL,
         reuseExistingServer: !isCI,
         timeout: 120_000,
