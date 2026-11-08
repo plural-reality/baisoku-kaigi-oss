@@ -59,6 +59,7 @@ import { defaultTitle, pageTitle } from "@/lib/metadata";
 import { sanitizeErrorForLog } from "@/lib/sanitize-error";
 import { useUserId } from "@/lib/useUserId";
 import { cn } from "@/lib/utils";
+import { mergeFetchedResponses } from "./merge-fetched-responses";
 import {
   type ParticipantResponse,
   ResponseItemCard,
@@ -484,6 +485,7 @@ export default function SessionPage({ sessionId }: { sessionId: string }) {
       if (!userId) return;
       setIsLoadingResponses(true);
       setResponsesError(null);
+      const fetchStartedAt = Date.now();
 
       try {
         const response = await axios.get(
@@ -516,7 +518,11 @@ export default function SessionPage({ sessionId }: { sessionId: string }) {
           createdAt: item.createdAt ?? new Date().toISOString(),
         }));
 
-        setParticipantResponses(sortResponsesByRecency(mapped));
+        setParticipantResponses((prev) =>
+          sortResponsesByRecency(
+            mergeFetchedResponses(mapped, prev, fetchStartedAt),
+          ),
+        );
       } catch (err) {
         if (signal?.aborted) return;
         console.error(
