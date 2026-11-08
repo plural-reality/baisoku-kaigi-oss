@@ -1,6 +1,57 @@
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 
 const PORT = parseInt(process.env.HASKELL_STUB_PORT || "8080", 10);
+
+// The real backend projects a new session into Postgres
+// (backend/src/Effect/Projection.hs) and the Next.js route polls for that row.
+// With SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY set, the stub writes the same
+// rows through PostgREST; without them it only answers.
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+const insertRows = async (table, rows) => {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: "POST",
+    headers: {
+      apikey: SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=minimal",
+    },
+    body: JSON.stringify(rows),
+  });
+  if (!res.ok) {
+    throw new Error(`insert ${table}: ${res.status} ${await res.text()}`);
+  }
+};
+
+const projectSession = async (session, request) => {
+  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) return;
+  await insertRows("sessions", [
+    {
+      id: session.sessionId,
+      title: request.title,
+      context: request.background ?? "",
+      host_user_id: request.hostUserId,
+      goal: request.purpose,
+      is_public: false,
+      admin_access_token: session.adminAccessToken,
+    },
+  ]);
+  const questions = request.initialQuestions ?? [];
+  if (questions.length > 0) {
+    await insertRows(
+      "statements",
+      questions.map((text, index) => ({
+        id: randomUUID(),
+        session_id: session.sessionId,
+        text,
+        order_index: index + 1,
+      })),
+    );
+  }
+};
 
 const server = createServer((req, res) => {
   const timestamp = new Date().toISOString();
@@ -31,22 +82,30 @@ const server = createServer((req, res) => {
 
     // POST /sessions - Create session
     if (req.method === "POST" && req.url === "/sessions") {
-      let _parsed = {};
+      let parsed = {};
       try {
-        _parsed = JSON.parse(body);
+        parsed = JSON.parse(body);
       } catch {
         // ignore parse errors
       }
 
       const response = {
-        id: "test-session-id-e2e",
-        adminAccessToken: "test-admin-token-e2e",
+        sessionId: randomUUID(),
+        adminAccessToken: randomUUID(),
       };
 
-      console.log(`[${timestamp}] Responding with session:`, response);
-
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(response));
+      projectSession(response, parsed).then(
+        () => {
+          console.log(`[${timestamp}] Responding with session:`, response);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(response));
+        },
+        (error) => {
+          console.error(`[${timestamp}] Projection failed:`, error);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: String(error) }));
+        },
+      );
       return;
     }
 

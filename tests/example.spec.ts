@@ -3,8 +3,8 @@ import { expect, test } from "@playwright/test";
 test("homepage loads successfully", async ({ page }) => {
   await page.goto("/");
 
-  // Wait for the page to be visible
-  await expect(page).toHaveURL(/.*localhost:3000/);
+  // Stays on the home page (any host/port: CI serves on 13000)
+  await expect(page).toHaveURL(/\/$/);
 
   // Verify the "セッションを作成" link is displayed
   const createLink = page

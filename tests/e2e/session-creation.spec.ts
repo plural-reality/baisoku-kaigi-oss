@@ -20,9 +20,9 @@ test.describe("Session Creation Flow", () => {
     // Should navigate to /sessions/new
     await expect(page).toHaveURL(/\/sessions\/new/);
 
-    // The template selector is shown first - skip it by clicking "テンプレートなしで始める"
+    // The template selector is shown first - skip it by clicking "白紙から始める"
     const skipTemplateButton = page.getByRole("button", {
-      name: /テンプレートなしで始める/,
+      name: /白紙から始める/,
     });
     // Wait for the template selector to appear (it may take a moment)
     await expect(skipTemplateButton).toBeVisible({ timeout: 10_000 });
@@ -79,7 +79,7 @@ test.describe("Session Creation Flow", () => {
 
     // Skip template selector
     const skipTemplateButton = page.getByRole("button", {
-      name: /テンプレートなしで始める/,
+      name: /白紙から始める/,
     });
     await expect(skipTemplateButton).toBeVisible({ timeout: 10_000 });
     await skipTemplateButton.click();

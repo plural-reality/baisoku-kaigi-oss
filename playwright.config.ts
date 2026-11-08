@@ -24,6 +24,9 @@ export default defineConfig({
   reporter: "html",
   use: {
     baseURL,
+    // The specs assert Japanese copy; the app picks its language from
+    // Accept-Language, so pin it (english-screens.spec.ts overrides it).
+    locale: "ja-JP",
     trace: "on-first-retry",
   },
 
