@@ -5,7 +5,8 @@ import {
   characterBudget,
   outputLanguageRule,
 } from "@/lib/content-language";
-import { callLLM, FAST_MODEL } from "@/lib/llm";
+import { callLLMWithMeta, FAST_MODEL } from "@/lib/llm";
+import { PROMPT_VERSIONS } from "@/lib/llm-models";
 import { supabase } from "@/lib/supabase";
 
 // じぶんレポート地図で「その人が全体の中でどんな立ち位置か」を本人レポートだけから
@@ -70,12 +71,13 @@ export const generateReportStance = async (
     .maybeSingle();
   if (cachedRow?.response) return cachedRow.response;
 
-  const raw = await callLLM([{ role: "user", content: prompt }], FAST_MODEL, {
-    reasoningEffort: "low",
-    maxTokens: 256,
-  });
+  const generation = await callLLMWithMeta(
+    [{ role: "user", content: prompt }],
+    FAST_MODEL,
+    { reasoningEffort: "low", maxTokens: 256 },
+  );
   const stance =
-    raw
+    generation.content
       .split("\n")
       .map((line) => line.trim())
       .find((line) => line.length > 0)
@@ -83,9 +85,12 @@ export const generateReportStance = async (
       .slice(0, characterBudget(60, language)) ?? "";
 
   if (stance) {
-    await supabase
-      .from("llm_cache")
-      .upsert({ cache_key: cacheKey, response: stance });
+    await supabase.from("llm_cache").upsert({
+      cache_key: cacheKey,
+      response: stance,
+      model: generation.model,
+      prompt_version: PROMPT_VERSIONS.stance,
+    });
   }
   return stance || null;
 };

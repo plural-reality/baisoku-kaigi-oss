@@ -80,3 +80,6 @@ override.tf.json
 .terraformrc
 terraform.rc
 infra/tfc-bootstrap/terraform.tfvars
+
+# survey evaluation runs (paid model outputs and human judgments)
+/eval/survey/results/

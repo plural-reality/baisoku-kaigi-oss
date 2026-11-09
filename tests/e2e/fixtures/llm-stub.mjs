@@ -25,6 +25,38 @@ const FIXED_REPORT_RESPONSE = `# セッションレポート
 
 全体として建設的な議論が行われ、チームの方向性について共通理解が深まりました。`;
 
+// Requests with a strict json_schema response_format (survey statements, form
+// suggestions, report-map narrative) get a JSON value of that schema, like the
+// real structured-output API: strings come from FIXED_QUESTIONS (distinct, so
+// list validators that reject duplicates accept them).
+const instanceOf = (schema, index = 0) => {
+  switch (schema?.type) {
+    case "object":
+      return Object.fromEntries(
+        Object.entries(schema.properties ?? {}).map(([key, value]) => [
+          key,
+          instanceOf(value, index),
+        ]),
+      );
+    case "array":
+      return FIXED_QUESTIONS.map((_, i) => instanceOf(schema.items, i));
+    case "integer":
+    case "number":
+      return index;
+    case "boolean":
+      return false;
+    default:
+      return FIXED_QUESTIONS[index % FIXED_QUESTIONS.length];
+  }
+};
+
+const structuredContent = (parsed) => {
+  const format = parsed.response_format;
+  return format?.type === "json_schema" && format.json_schema?.schema
+    ? JSON.stringify(instanceOf(format.json_schema.schema))
+    : null;
+};
+
 const server = createServer((req, res) => {
   const timestamp = new Date().toISOString();
   let body = "";
@@ -78,9 +110,9 @@ const server = createServer((req, res) => {
         messageContent.includes("まとめ") ||
         messageContent.includes("分析");
 
-      const responseContent = isReportRequest
-        ? FIXED_REPORT_RESPONSE
-        : FIXED_CHAT_RESPONSE;
+      const responseContent =
+        structuredContent(parsed) ??
+        (isReportRequest ? FIXED_REPORT_RESPONSE : FIXED_CHAT_RESPONSE);
 
       if (isStreaming) {
         console.log(

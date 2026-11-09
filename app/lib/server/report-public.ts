@@ -28,6 +28,8 @@ export const toPublicSessionReport = (
   const snapshot = report.promptSnapshot;
   return {
     ...report,
+    // Raw OpenRouter usage (tokens, cost) is internal telemetry, not report content.
+    ...("tokenUsage" in report ? { tokenUsage: null } : {}),
     createdBy:
       typeof report.createdBy === "string"
         ? aliasUserId(report.sessionId, report.createdBy)

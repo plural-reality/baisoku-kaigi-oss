@@ -2,7 +2,18 @@ import { recordLLMUsage, withLLMLimit } from "@agents/llm-limiter";
 import * as Sentry from "@sentry/nextjs";
 import axios from "axios";
 import { type ContentLanguage, withOutputLanguage } from "./content-language";
+import type { Json } from "./database.types";
 import { callViaCli, localCliBackend } from "./llm-cli";
+import {
+  ACCURATE_MODEL,
+  FAST_MODEL,
+  type LLMGenerationMeta,
+  PROMPT_VERSIONS,
+} from "./llm-models";
+import {
+  type JsonSchemaResponseFormat,
+  structuredOutputFields,
+} from "./llm-structured-output";
 import {
   UNTRUSTED_DATA_RULE,
   untrustedName,
@@ -12,8 +23,11 @@ import {
 const OPENROUTER_API_URL =
   process.env.OPENROUTER_API_URL ??
   "https://openrouter.ai/api/v1/chat/completions";
-export const FAST_MODEL = "google/gemini-3.5-flash";
-export const ACCURATE_MODEL = "google/gemini-3.1-pro-preview";
+
+// Model IDs live in ./llm-models (env-overridable); re-exported for the many
+// existing importers of this module.
+export { ACCURATE_MODEL, FAST_MODEL } from "./llm-models";
+
 const DEFAULT_MODEL = ACCURATE_MODEL;
 const DEFAULT_STREAM_MODEL = FAST_MODEL;
 const STREAM_TIMEOUT_MS = 300000;
@@ -179,6 +193,49 @@ export class LLMAbortedError extends Error {
 const abortedError = (signal: AbortSignal | undefined): boolean =>
   signal?.aborted === true;
 
+// One completed (non-streaming) call: the text plus what OpenRouter reports
+// about how it was produced, so callers can store the provenance next to the
+// output. `usage` is OpenRouter's usage object as-is (prompt/completion/total
+// tokens, cost when available); null for a local CLI backend.
+export type LLMCallResult = {
+  readonly content: string;
+  readonly model: string;
+  readonly generationId: string | null;
+  readonly usage: { [key: string]: Json | undefined } | null;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+// OpenRouter's `model` is the slug that actually served the request (an alias
+// or env override resolves to it); fall back to what we asked for.
+const resultFromResponse = (
+  data: unknown,
+  content: string,
+  requestedModel: string,
+): LLMCallResult => {
+  const body = isRecord(data) ? data : {};
+  return {
+    content,
+    model: typeof body.model === "string" ? body.model : requestedModel,
+    generationId: typeof body.id === "string" ? body.id : null,
+    // The body is parsed JSON, so its usage object is JSON as well.
+    usage: isRecord(body.usage)
+      ? (body.usage as { [key: string]: Json | undefined })
+      : null,
+  };
+};
+
+// Prompt provenance for one call result (what to store next to the output).
+export const generationMeta = (
+  result: Pick<LLMCallResult, "model" | "generationId">,
+  promptVersion: string,
+): LLMGenerationMeta => ({
+  model: result.model,
+  promptVersion,
+  generationId: result.generationId,
+});
+
 type LLMCallOptions = {
   // Reports run synchronously behind the HTTP request, so the LLM call must
   // finish under the CDN/proxy timeout (~100s). These cap a reasoning model's
@@ -189,6 +246,9 @@ type LLMCallOptions = {
   // caller that has given up (disconnected client, exceeded budget) keeps
   // holding a limiter slot and spending tokens for up to 5 x 300s.
   readonly signal?: AbortSignal;
+  // Strict JSON-schema output (OpenRouter structured outputs). Provider routing
+  // is unchanged (see structuredOutputFields).
+  readonly responseFormat?: JsonSchemaResponseFormat;
 };
 
 const MAX_ERROR_BODY_CHARS = 2000;
@@ -261,9 +321,26 @@ export async function callLLM(
   model: string = DEFAULT_MODEL,
   options: LLMCallOptions = {},
 ): Promise<string> {
+  const result = await callLLMWithMeta(messages, model, options);
+  return result.content;
+}
+
+// Same call as callLLM, but keeps the response id / resolved model / usage so
+// the caller can persist them (session_reports, individual_reports, llm_cache).
+export async function callLLMWithMeta(
+  messages: LLMMessage[],
+  model: string = DEFAULT_MODEL,
+  options: LLMCallOptions = {},
+): Promise<LLMCallResult> {
   const cliBackend = localCliBackend();
   if (cliBackend) {
-    return callViaCli(cliBackend, messages);
+    const content = await callViaCli(cliBackend, messages);
+    return {
+      content,
+      model: `cli:${cliBackend.bin}`,
+      generationId: null,
+      usage: null,
+    };
   }
 
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -299,6 +376,9 @@ export async function callLLM(
               ? { reasoning: { effort: options.reasoningEffort } }
               : {}),
             ...(options.maxTokens ? { max_tokens: options.maxTokens } : {}),
+            ...(options.responseFormat
+              ? structuredOutputFields(options.responseFormat)
+              : {}),
           },
           {
             headers: {
@@ -365,7 +445,7 @@ export async function callLLM(
         console.log("==================\n");
       }
 
-      return output;
+      return resultFromResponse(response.data, output, model);
     } catch (error) {
       if (abortedError(options.signal)) {
         throw new LLMAbortedError();
@@ -590,6 +670,8 @@ export type DeepDiveQuestion = { question: string; topic: string };
 export type IndividualReportResult = {
   reportMarkdown: string;
   deepDiveQuestions: DeepDiveQuestion[];
+  // Provenance of the call that produced it; stored on individual_reports.
+  llm: LLMGenerationMeta;
 };
 
 const DEEPDIVE_DELIMITER = "===DEEPDIVE===";
@@ -622,7 +704,7 @@ const parseDeepDiveQuestions = (tail: string): DeepDiveQuestion[] => {
 
 export const parseIndividualReportResponse = (
   raw: string,
-): IndividualReportResult => {
+): Omit<IndividualReportResult, "llm"> => {
   const trimmed = raw.trim();
   const idx = trimmed.indexOf(DEEPDIVE_DELIMITER);
   if (idx === -1) {
@@ -739,11 +821,14 @@ ${DEEPDIVE_DELIMITER}
   // output so the model finishes under the CDN timeout (was 504-ing at 32-50s+
   // with full reasoning). max_tokens also bounds the reasoning budget. Then parse
   // the report body + deep-dive questions out of the response.
-  const response = await callLLM(messages, ACCURATE_MODEL, {
+  const result = await callLLMWithMeta(messages, ACCURATE_MODEL, {
     reasoningEffort: "low",
     maxTokens: 8192,
   });
-  return parseIndividualReportResponse(response);
+  return {
+    ...parseIndividualReportResponse(result.content),
+    llm: generationMeta(result, PROMPT_VERSIONS.individualReport),
+  };
 }
 
 export interface StatementStat {

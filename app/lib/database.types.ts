@@ -163,24 +163,33 @@ export type Database = {
           content_markdown: string;
           created_at: string;
           deep_dive_questions: Json;
+          generation_id: string | null;
           id: string;
+          model: string | null;
           participant_user_id: string;
+          prompt_version: string | null;
           session_id: string;
         };
         Insert: {
           content_markdown: string;
           created_at?: string;
           deep_dive_questions?: Json;
+          generation_id?: string | null;
           id?: string;
+          model?: string | null;
           participant_user_id: string;
+          prompt_version?: string | null;
           session_id: string;
         };
         Update: {
           content_markdown?: string;
           created_at?: string;
           deep_dive_questions?: Json;
+          generation_id?: string | null;
           id?: string;
+          model?: string | null;
           participant_user_id?: string;
+          prompt_version?: string | null;
           session_id?: string;
         };
         Relationships: [
@@ -197,16 +206,22 @@ export type Database = {
         Row: {
           cache_key: string;
           created_at: string;
+          model: string | null;
+          prompt_version: string | null;
           response: string;
         };
         Insert: {
           cache_key: string;
           created_at?: string;
+          model?: string | null;
+          prompt_version?: string | null;
           response: string;
         };
         Update: {
           cache_key?: string;
           created_at?: string;
+          model?: string | null;
+          prompt_version?: string | null;
           response?: string;
         };
         Relationships: [];
@@ -290,6 +305,7 @@ export type Database = {
       };
       responses: {
         Row: {
+          answer_source: string | null;
           created_at: string;
           id: string;
           participant_user_id: string;
@@ -301,6 +317,7 @@ export type Database = {
           value: number | null;
         };
         Insert: {
+          answer_source?: string | null;
           created_at?: string;
           id?: string;
           participant_user_id: string;
@@ -312,6 +329,7 @@ export type Database = {
           value?: number | null;
         };
         Update: {
+          answer_source?: string | null;
           created_at?: string;
           id?: string;
           participant_user_id?: string;
@@ -346,9 +364,11 @@ export type Database = {
           created_at: string;
           created_by: string;
           error_message: string | null;
+          generation_id: string | null;
           id: string;
           model: string;
           prompt_snapshot: Json;
+          prompt_version: string | null;
           request_markdown: string;
           session_id: string;
           status: string;
@@ -362,9 +382,11 @@ export type Database = {
           created_at?: string;
           created_by: string;
           error_message?: string | null;
+          generation_id?: string | null;
           id?: string;
-          model?: string;
+          model: string;
           prompt_snapshot?: Json;
+          prompt_version?: string | null;
           request_markdown?: string;
           session_id: string;
           status?: string;
@@ -378,9 +400,11 @@ export type Database = {
           created_at?: string;
           created_by?: string;
           error_message?: string | null;
+          generation_id?: string | null;
           id?: string;
           model?: string;
           prompt_snapshot?: Json;
+          prompt_version?: string | null;
           request_markdown?: string;
           session_id?: string;
           status?: string;

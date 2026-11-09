@@ -6,9 +6,9 @@ import {
 } from "../app/lib/session-context";
 import { wrapUntrusted } from "../app/lib/untrusted-text";
 import {
-  generatePlanMarkdown,
-  generateSurveyAnalysisMarkdown,
-  generateSurveyStatements,
+  generatePlanMarkdownWithMeta,
+  generateSurveyAnalysisMarkdownWithMeta,
+  generateSurveyStatementsWithMeta,
   type ParticipantReflectionInput,
   type StatementStat,
 } from "./llm";
@@ -175,9 +175,9 @@ export class PtolemyAgent {
       this.getParticipantReflections(context.session.id),
     ]);
 
-    let markdown: string;
+    let plan: Awaited<ReturnType<typeof generatePlanMarkdownWithMeta>>;
     try {
-      markdown = await generatePlanMarkdown({
+      plan = await generatePlanMarkdownWithMeta({
         sessionTitle: context.session.title,
         sessionGoal: sessionFacilitatorGoal(context.session),
         initialContext: sessionFacilitatorContext(context.session),
@@ -202,10 +202,12 @@ export class PtolemyAgent {
       return false;
     }
 
+    // payload.llm records which model / prompt version / generation produced
+    // the text (same shape on survey and survey_analysis events).
     await this.supabase
       .from("events")
       .update({
-        payload: { markdown },
+        payload: { markdown: plan.markdown, llm: plan.llm },
         progress: 1,
         updated_at: new Date().toISOString(),
       })
@@ -336,9 +338,9 @@ export class PtolemyAgent {
       this.getParticipantCount(context.session.id),
     ]);
 
-    let statementTexts: string[];
+    let survey: Awaited<ReturnType<typeof generateSurveyStatementsWithMeta>>;
     try {
-      statementTexts = await generateSurveyStatements({
+      survey = await generateSurveyStatementsWithMeta({
         sessionTitle: context.session.title,
         sessionGoal: sessionFacilitatorGoal(context.session),
         initialContext: sessionFacilitatorContext(context.session),
@@ -364,7 +366,7 @@ export class PtolemyAgent {
       return { status: "idle" };
     }
 
-    const preparedStatements = statementTexts.slice(0, 15);
+    const preparedStatements = survey.statements.slice(0, 15);
 
     if (preparedStatements.length === 0) {
       const message = "No statements generated for survey";
@@ -410,7 +412,7 @@ export class PtolemyAgent {
     await this.supabase
       .from("events")
       .update({
-        payload: { statementIds },
+        payload: { statementIds, llm: survey.llm },
         progress: 0.5,
         updated_at: new Date().toISOString(),
       })
@@ -600,9 +602,11 @@ export class PtolemyAgent {
     const eventThreadContext = await this.getEventThreadContext(
       context.thread.id,
     );
-    let markdown: string;
+    let analysis: Awaited<
+      ReturnType<typeof generateSurveyAnalysisMarkdownWithMeta>
+    >;
     try {
-      markdown = await generateSurveyAnalysisMarkdown({
+      analysis = await generateSurveyAnalysisMarkdownWithMeta({
         sessionTitle: context.session.title,
         sessionGoal: sessionFacilitatorGoal(context.session),
         initialContext: sessionFacilitatorContext(context.session),
@@ -630,7 +634,11 @@ export class PtolemyAgent {
     await this.supabase
       .from("events")
       .update({
-        payload: { statementIds, markdown },
+        payload: {
+          statementIds,
+          markdown: analysis.markdown,
+          llm: analysis.llm,
+        },
         progress: 1,
         updated_at: new Date().toISOString(),
       })

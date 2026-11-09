@@ -23,7 +23,7 @@
 | Frontend / API | Next.js 15 (App Router) + React 19 + TypeScript |
 | UI | Tailwind CSS 4 + Radix UI |
 | Database | Supabase (PostgreSQL + Realtime) |
-| LLM | OpenRouter API(既定モデルは `app/lib/llm.ts`) |
+| LLM | OpenRouter API(既定モデルは `app/lib/llm-models.ts`) |
 | 認証(任意) | WorkOS AuthKit |
 | Backend(任意) | Haskell (Servant + Polysemy + Project:M36) |
 | Build | npm / Nix Flakes |
@@ -110,6 +110,7 @@ npm run start
 | `SUPABASE_SERVICE_ROLE_KEY` | ○ | ○ | サーバー側の特権アクセス |
 | `OPENROUTER_API_KEY` | ○ | ○ | LLM 呼び出し |
 | `OPENROUTER_API_URL` | | | LLM エンドポイントの差し替え |
+| `LLM_FAST_MODEL` / `LLM_ACCURATE_MODEL` | | | モデル ID の差し替え(既定は `app/lib/llm-models.ts`) |
 | `PARTICIPANT_TOKEN_SECRET` | 推奨 | ○ | 参加者トークンの署名鍵 |
 | `PARTICIPANT_TOKEN_ENFORCE` | | | `false` で旧形式トークンを受け付ける(移行用) |
 | `PARTICIPANT_TOKEN_RATE_LIMIT_PER_MIN` | | | トークン発行の IP ごとの上限(既定 30/分) |

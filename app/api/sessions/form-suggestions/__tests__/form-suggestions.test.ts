@@ -71,6 +71,42 @@ describe("POST /api/sessions/form-suggestions", () => {
     expect(body.suggestions[0]).toContain("条件[A]");
   });
 
+  it("asks for strict { questions } output and reads it", async () => {
+    mockedGetUserId.mockResolvedValue("user-1");
+    mockedPost.mockResolvedValue(
+      llmResponse(
+        JSON.stringify({ questions: ["Q1を教えてください", "Q2は?"] }),
+      ),
+    );
+    const req = createMockRequest({
+      method: "POST",
+      body: { purpose: "p", backgroundInfo: "b" },
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.suggestions).toEqual(["Q1を教えてください", "Q2は?"]);
+    expect(mockedPost.mock.calls[0][1]).toMatchObject({
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "form_suggestions",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              questions: { type: "array", items: { type: "string" } },
+            },
+            required: ["questions"],
+            additionalProperties: false,
+          },
+        },
+      },
+    });
+  });
+
   it("degrades to [] (not 500) when the model output has no parseable array", async () => {
     mockedGetUserId.mockResolvedValue("user-1");
     mockedPost.mockResolvedValue(llmResponse("これは提案ではありません。"));

@@ -1,10 +1,22 @@
 import axios from "axios";
-// Both app/lib files are dependency-light and copied into the deployed agent
+// These app/lib files are dependency-light and copied into the deployed agent
 // package by flake.nix (next to session-context.ts) — keep that list in sync.
 import {
   type ContentLanguage,
   withOutputLanguage,
 } from "../app/lib/content-language";
+import {
+  ACCURATE_MODEL,
+  FAST_MODEL,
+  type LLMGenerationMeta,
+  PROMPT_VERSIONS,
+} from "../app/lib/llm-models";
+import {
+  type JsonSchemaResponseFormat,
+  stringListFormat,
+  structuredOutputFields,
+  structuredStringList,
+} from "../app/lib/llm-structured-output";
 import { sanitizeErrorForLog } from "../app/lib/sanitize-error";
 import {
   UNTRUSTED_DATA_RULE,
@@ -17,7 +29,7 @@ import { validateSurveyStatements } from "./survey-validation";
 
 type Role = "system" | "user" | "assistant";
 
-interface LLMMessage {
+export interface LLMMessage {
   role: Role;
   content: string;
 }
@@ -28,11 +40,11 @@ export type ParticipantReflectionInput = {
   submittedAt?: string;
 };
 
+// Same env override as app/lib/llm.ts so the e2e OpenRouter stub can intercept
+// the agent's calls too.
 const OPENROUTER_API_URL =
   process.env.OPENROUTER_API_URL ??
   "https://openrouter.ai/api/v1/chat/completions";
-const FAST_MODEL = "google/gemini-3.5-flash";
-const ACCURATE_MODEL = "google/gemini-3.1-pro-preview";
 const DEFAULT_MODEL = FAST_MODEL;
 
 // Full prompt bodies contain participant answers and names; never write them to
@@ -46,15 +58,100 @@ const SYSTEM_GUARD: LLMMessage = {
   content: UNTRUSTED_DATA_RULE,
 };
 
+export type CallOptions = {
+  temperature?: number;
+  reasoning_max_tokens?: number;
+  reasoning_effort?: "low";
+  model?: string;
+  responseFormat?: JsonSchemaResponseFormat;
+};
+
+// One completed call: the text plus what OpenRouter reports about it (resolved
+// model slug, response id, usage). Null metadata when a local CLI answered.
+type CallResult = {
+  content: string;
+  model: string;
+  generationId: string | null;
+  usage: Record<string, unknown> | null;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const metaFor = (
+  result: CallResult,
+  promptVersion: string,
+): LLMGenerationMeta => ({
+  model: result.model,
+  promptVersion,
+  generationId: result.generationId,
+});
+
+export type OpenRouterRequestBody = {
+  model: string;
+  messages: LLMMessage[];
+  temperature: number;
+  reasoning?: { max_tokens: number } | { effort: "low" };
+  response_format?: JsonSchemaResponseFormat;
+  provider?: Record<string, unknown>;
+};
+
+// The exact chat-completions body the agent sends. Exported so the offline
+// evaluation (eval/survey/run.ts) sends the same request as production.
+export const openRouterRequestBody = (
+  messages: LLMMessage[],
+  options?: CallOptions,
+): OpenRouterRequestBody => ({
+  model: options?.model ?? DEFAULT_MODEL,
+  messages,
+  temperature: options?.temperature ?? 0.7,
+  ...(options?.reasoning_effort !== undefined
+    ? { reasoning: { effort: options.reasoning_effort } }
+    : options?.reasoning_max_tokens !== undefined
+      ? { reasoning: { max_tokens: options.reasoning_max_tokens } }
+      : {}),
+  ...(options?.responseFormat
+    ? structuredOutputFields(options.responseFormat)
+    : {}),
+});
+
+// Each attempt acquires a fresh limiter slot (released during backoff) and is
+// counted against the rate window / daily budget; a tripped breaker throws and
+// is non-retryable, so it fails fast (audit H5 + M3).
+// `onAttempt` runs once per HTTP attempt (retries included); the offline
+// evaluation uses it to count billed attempts.
+export const sendOpenRouterRequest = (
+  body: OpenRouterRequestBody,
+  apiKey: string,
+  onAttempt?: () => void,
+) =>
+  withRetry(() =>
+    withLLMLimit(() => {
+      onAttempt?.();
+      return axios.post(OPENROUTER_API_URL, body, {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://cartographer.app",
+          "X-Title": "Cartographer-Agent",
+        },
+        timeout: 45000,
+      });
+    }),
+  );
+
 async function callLLM(
   messages: LLMMessage[],
-  options?: {
-    temperature?: number;
-    reasoning_max_tokens?: number;
-    reasoning_effort?: "low";
-    model?: string;
-  },
+  options?: CallOptions,
 ): Promise<string> {
+  const result = await callLLMWithMeta(messages, options);
+  return result.content;
+}
+
+async function callLLMWithMeta(
+  messages: LLMMessage[],
+  options?: CallOptions,
+): Promise<CallResult> {
   const model = options?.model ?? DEFAULT_MODEL;
 
   // Local full-debug path: when LLM_PROVIDER=claude-cli (or codex-cli), route the
@@ -70,7 +167,12 @@ async function callLLM(
       console.log("[LLM] via local CLI", {
         provider: process.env.LLM_PROVIDER,
       });
-      return callViaCli(cliBackend, messages);
+      return {
+        content: await callViaCli(cliBackend, messages),
+        model: `cli:${cliBackend.bin}`,
+        generationId: null,
+        usage: null,
+      };
     }
   }
 
@@ -90,37 +192,9 @@ async function callLLM(
     });
   }
 
-  const requestBody: {
-    model: string;
-    messages: LLMMessage[];
-    temperature: number;
-    reasoning?: { max_tokens: number } | { effort: "low" };
-  } = {
-    model,
-    messages,
-    temperature: options?.temperature ?? 0.7,
-    ...(options?.reasoning_effort !== undefined
-      ? { reasoning: { effort: options.reasoning_effort } }
-      : options?.reasoning_max_tokens !== undefined
-        ? { reasoning: { max_tokens: options.reasoning_max_tokens } }
-        : {}),
-  };
-
-  // Each attempt acquires a fresh limiter slot (released during backoff) and is
-  // counted against the rate window / daily budget; a tripped breaker throws and
-  // is non-retryable, so it fails fast (audit H5 + M3).
-  const response = await withRetry(() =>
-    withLLMLimit(() =>
-      axios.post(OPENROUTER_API_URL, requestBody, {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "https://cartographer.app",
-          "X-Title": "Cartographer-Agent",
-        },
-        timeout: 45000,
-      }),
-    ),
+  const response = await sendOpenRouterRequest(
+    openRouterRequestBody(messages, options),
+    apiKey,
   );
 
   const data = response.data;
@@ -142,7 +216,14 @@ async function callLLM(
     completionTokens: data?.usage?.completion_tokens,
   });
   console.log("[LLM] response length", content.length);
-  return content;
+  return {
+    content,
+    // OpenRouter's `model` is the slug that served the request; fall back to
+    // what we asked for.
+    model: typeof data?.model === "string" ? data.model : model,
+    generationId: typeof data?.id === "string" ? data.id : null,
+    usage: isRecord(data?.usage) ? data.usage : null,
+  };
 }
 
 export function extractJsonArray(text: string): string[] | null {
@@ -200,7 +281,26 @@ export function extractJsonArray(text: string): string[] | null {
   return null;
 }
 
-export async function generatePlanMarkdown(input: {
+// A2/A3 ask for strict JSON-schema output ({ statements: string[] }, see
+// STATEMENTS_FORMAT). A bare string[] is still accepted, and anything else goes
+// through the lenient extractJsonArray (fences, bullets) as before.
+export const STATEMENTS_KEY = "statements";
+const STATEMENTS_FORMAT = stringListFormat("survey_statements", STATEMENTS_KEY);
+const SINGLE_STATEMENT_FORMAT = stringListFormat(
+  "survey_statement",
+  STATEMENTS_KEY,
+);
+
+export const parseStatementList = (text: string): string[] | null => {
+  const structured = structuredStringList(text, STATEMENTS_KEY);
+  if (structured) return structured;
+  if (isPromptDebug()) {
+    console.log("[LLM] statements were not structured JSON; lenient parse");
+  }
+  return extractJsonArray(text);
+};
+
+export type PlanMarkdownInput = {
   sessionTitle: string;
   sessionGoal: string;
   initialContext: string;
@@ -210,7 +310,15 @@ export async function generatePlanMarkdown(input: {
   participantCount?: number;
   participantReflections?: ParticipantReflectionInput[];
   language?: ContentLanguage;
-}): Promise<string> {
+};
+
+// The *WithMeta variants return the text together with the model / prompt
+// version / OpenRouter generation id, which PtolemyAgent stores in
+// events.payload.llm. The plain variants keep the string-only contract for
+// existing callers and tests.
+export async function generatePlanMarkdownWithMeta(
+  input: PlanMarkdownInput,
+): Promise<{ markdown: string; llm: LLMGenerationMeta }> {
   const participantsLabel =
     typeof input.participantCount === "number"
       ? String(input.participantCount)
@@ -259,7 +367,7 @@ ${input.participantReflections
 `;
 
   try {
-    const response = await callLLM(
+    const result = await callLLMWithMeta(
       withOutputLanguage(
         [SYSTEM_GUARD, { role: "user", content: prompt }],
         input.language,
@@ -268,12 +376,20 @@ ${input.participantReflections
         model: ACCURATE_MODEL,
       },
     );
-    return response.trim();
+    return {
+      markdown: result.content.trim(),
+      llm: metaFor(result, PROMPT_VERSIONS.plan),
+    };
   } catch (error) {
     console.error("[LLM] Plan generation failed:", sanitizeErrorForLog(error));
     throw new Error("Plan generation failed");
   }
 }
+
+export const generatePlanMarkdown = (
+  input: PlanMarkdownInput,
+): Promise<string> =>
+  generatePlanMarkdownWithMeta(input).then((result) => result.markdown);
 
 export type SurveyStatementsInput = {
   sessionTitle: string;
@@ -329,23 +445,40 @@ export const buildSurveyStatementsPrompt = (
   return prompt;
 };
 
-export const generateSurveyStatements = (
+// Messages and call options of one survey-statement generation, shared by the
+// agent and the offline evaluation so both send the same request.
+export const surveyStatementsMessages = (
   input: SurveyStatementsInput,
-): Promise<string[]> =>
-  callLLM(
-    withOutputLanguage(
-      [
-        SYSTEM_GUARD,
-        { role: "user", content: buildSurveyStatementsPrompt(input) },
-      ],
-      input.language,
-    ),
-    surveyStatementsOptions(process.env.SURVEY_STATEMENTS_MODEL),
+): LLMMessage[] =>
+  withOutputLanguage(
+    [
+      SYSTEM_GUARD,
+      { role: "user", content: buildSurveyStatementsPrompt(input) },
+    ],
+    input.language,
+  );
+
+export const surveyStatementsCallOptions = (setting: string | undefined) => ({
+  ...surveyStatementsOptions(setting),
+  responseFormat: STATEMENTS_FORMAT,
+});
+
+export const generateSurveyStatementsWithMeta = (
+  input: SurveyStatementsInput,
+): Promise<{ statements: string[]; llm: LLMGenerationMeta }> =>
+  callLLMWithMeta(
+    surveyStatementsMessages(input),
+    surveyStatementsCallOptions(process.env.SURVEY_STATEMENTS_MODEL),
   )
     .then((response) => {
-      const result = validateSurveyStatements(extractJsonArray(response));
+      const result = validateSurveyStatements(
+        parseStatementList(response.content),
+      );
       return result.ok
-        ? result.statements
+        ? {
+            statements: result.statements,
+            llm: metaFor(response, PROMPT_VERSIONS.surveyStatements),
+          }
         : Promise.reject(
             new Error(`Invalid survey statements: ${result.reason}`),
           );
@@ -357,6 +490,11 @@ export const generateSurveyStatements = (
       );
       return Promise.reject(new Error("Survey statement generation failed"));
     });
+
+export const generateSurveyStatements = (
+  input: SurveyStatementsInput,
+): Promise<string[]> =>
+  generateSurveyStatementsWithMeta(input).then((result) => result.statements);
 
 export async function generateSingleSurveyStatement(input: {
   sessionTitle: string;
@@ -409,9 +547,10 @@ export async function generateSingleSurveyStatement(input: {
       {
         reasoning_max_tokens: 1,
         model: FAST_MODEL,
+        responseFormat: SINGLE_STATEMENT_FORMAT,
       },
     );
-    const parsed = extractJsonArray(response);
+    const parsed = parseStatementList(response);
     if (!parsed || parsed.length === 0) {
       throw new Error("LLM response was not valid JSON array");
     }
@@ -447,7 +586,7 @@ export interface StatementStat {
   }>;
 }
 
-export async function generateSurveyAnalysisMarkdown(input: {
+export type SurveyAnalysisInput = {
   sessionTitle: string;
   sessionGoal: string;
   initialContext: string;
@@ -455,7 +594,11 @@ export async function generateSurveyAnalysisMarkdown(input: {
   statements: StatementStat[];
   eventThreadContext: string;
   language?: ContentLanguage;
-}): Promise<string> {
+};
+
+export async function generateSurveyAnalysisMarkdownWithMeta(
+  input: SurveyAnalysisInput,
+): Promise<{ markdown: string; llm: LLMGenerationMeta }> {
   const formatValue = (value: number) => {
     switch (value) {
       case 2:
@@ -576,7 +719,7 @@ ${surveyResultsText}
 `;
 
   try {
-    const response = await callLLM(
+    const result = await callLLMWithMeta(
       withOutputLanguage(
         [SYSTEM_GUARD, { role: "user", content: prompt }],
         input.language,
@@ -585,7 +728,10 @@ ${surveyResultsText}
         model: ACCURATE_MODEL,
       },
     );
-    return response.trim();
+    return {
+      markdown: result.content.trim(),
+      llm: metaFor(result, PROMPT_VERSIONS.surveyAnalysis),
+    };
   } catch (error) {
     console.error(
       "[LLM] Survey analysis generation failed:",
@@ -594,3 +740,10 @@ ${surveyResultsText}
     throw new Error("Survey analysis generation failed");
   }
 }
+
+export const generateSurveyAnalysisMarkdown = (
+  input: SurveyAnalysisInput,
+): Promise<string> =>
+  generateSurveyAnalysisMarkdownWithMeta(input).then(
+    (result) => result.markdown,
+  );

@@ -50,12 +50,14 @@ const mockCallLLM = vi.fn();
 vi.mock("@/lib/llm", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/llm")>()),
   callLLM: (...args: unknown[]) => mockCallLLM(...args),
+  callLLMWithMeta: (...args: unknown[]) => mockCallLLM(...args),
 }));
 
 import { LLMAbortedError } from "@/lib/llm";
 import { encodeReportFailure } from "@/lib/report-failure";
 import {
   ACTIVE_REPORT_STALE_MS,
+  buildPayloadSummary,
   createSessionReportRecord,
   expireStaleSessionReports,
   INTERRUPTED_REPORT_MESSAGE,
@@ -165,6 +167,45 @@ describe("createSessionReportRecord", () => {
 });
 
 describe("generateSessionReport", () => {
+  it("stores the resolved model, prompt version, generation id and usage", async () => {
+    const { generateSessionReport } = await import("../session-reports");
+    const supabaseModule = await import("@/lib/supabase");
+    vi.mocked(supabaseModule.selectAllRange).mockResolvedValue({
+      data: [],
+      error: null,
+    } as never);
+    queued.session_reports = [
+      { data: row({ status: "pending" }) }, // load
+      {}, // mark generating
+      {}, // mark completed
+    ];
+    queued.sessions = [
+      { data: { id: "s-1", title: "t", context: "", goal: "" } },
+    ];
+    queued.statements = [{ data: [] }];
+    queued.event_threads = [{ data: null }];
+    const usage = { prompt_tokens: 120, completion_tokens: 30 };
+    mockCallLLM.mockResolvedValue({
+      content: "# report",
+      model: "google/gemini-3.1-pro-preview-0101",
+      generationId: "gen-report",
+      usage,
+    });
+
+    await generateSessionReport("rpt-1");
+
+    expect(chains.session_reports.at(-1)?.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "completed",
+        content_markdown: "# report",
+        model: "google/gemini-3.1-pro-preview-0101",
+        prompt_version: "2026-11-07.1",
+        generation_id: "gen-report",
+        token_usage: usage,
+      }),
+    );
+  });
+
   it("bounds the LLM call and records an over-budget run as failed", async () => {
     const { generateSessionReport } = await import("../session-reports");
     const supabaseModule = await import("@/lib/supabase");
@@ -199,6 +240,21 @@ describe("generateSessionReport", () => {
         status: "failed",
         error_message: encodeReportFailure("timeout"),
       }),
+    );
+  });
+});
+
+describe("buildPayloadSummary", () => {
+  const llm = {
+    model: "google/gemini-3.1-pro-preview",
+    promptVersion: "2026-11-07.1",
+    generationId: "gen-1",
+  };
+
+  it("keeps generation metadata out of the report prompt", () => {
+    expect(buildPayloadSummary({ markdown: "plan", llm })).toBeNull();
+    expect(buildPayloadSummary({ markdown: "plan", error: "x", llm })).toBe(
+      buildPayloadSummary({ markdown: "plan", error: "x" }),
     );
   });
 });

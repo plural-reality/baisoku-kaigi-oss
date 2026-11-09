@@ -1263,6 +1263,8 @@ export default function SessionPage({ sessionId }: { sessionId: string }) {
     responseType: ResponseType;
     value?: ResponseValue;
     textResponse?: string;
+    // How a free-text answer was entered (stored as responses.answer_source).
+    answerSource?: "typed" | "suggested";
   }) => {
     if (!userId || !currentStatement || isLoading) return;
     if (
@@ -1319,6 +1321,7 @@ export default function SessionPage({ sessionId }: { sessionId: string }) {
             value: payload.value,
             responseType: payload.responseType,
             textResponse: payload.textResponse,
+            answerSource: payload.answerSource,
           },
           { headers },
         );
@@ -1366,6 +1369,7 @@ export default function SessionPage({ sessionId }: { sessionId: string }) {
               value: payload.value,
               responseType: payload.responseType,
               textResponse: payload.textResponse,
+              answerSource: payload.answerSource,
             },
             { headers },
           )
@@ -1399,6 +1403,7 @@ export default function SessionPage({ sessionId }: { sessionId: string }) {
             value: payload.value,
             responseType: payload.responseType,
             textResponse: payload.textResponse,
+            answerSource: payload.answerSource,
           },
           { headers },
         ),
@@ -1496,6 +1501,7 @@ export default function SessionPage({ sessionId }: { sessionId: string }) {
     return handleSubmitResponse({
       responseType: "free_text",
       textResponse: suggestion,
+      answerSource: "suggested",
     });
   };
 
@@ -2184,6 +2190,7 @@ export default function SessionPage({ sessionId }: { sessionId: string }) {
                                   handleSubmitResponse({
                                     responseType: "free_text",
                                     textResponse: freeTextInput,
+                                    answerSource: "typed",
                                   })
                                 }
                                 disabled={

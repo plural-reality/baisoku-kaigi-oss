@@ -14,14 +14,16 @@ import {
   toContentLanguage,
   withOutputLanguage,
 } from "@/lib/content-language";
+import { FAST_MODEL } from "@/lib/llm-models";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_FILE_COUNT = 10;
 const MAX_TOTAL_BYTES = 30 * 1024 * 1024; // 30MB (matches nginx client_max_body_size)
 const EXTRACT_CONCURRENCY = 2; // bound parallel native parses + OpenRouter calls
 const SUMMARIZE_THRESHOLD = 3000;
-const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const FAST_MODEL = "google/gemini-3.5-flash";
+const OPENROUTER_API_URL =
+  process.env.OPENROUTER_API_URL ??
+  "https://openrouter.ai/api/v1/chat/completions";
 
 // テキスト系は全て utf-8 として読む
 const TEXT_EXTENSIONS: ReadonlyArray<string> = [
