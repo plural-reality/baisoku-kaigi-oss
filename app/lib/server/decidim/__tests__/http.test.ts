@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("node:dns", () => ({ lookup: vi.fn() }));
+vi.mock("axios", () => ({ default: { post: vi.fn() } }));
 
 import { lookup } from "node:dns";
-import { guardedLookup, isBlockedAddress } from "../http";
+import axios from "axios";
+import { guardedLookup, isBlockedAddress, postToDecidim } from "../http";
 
 const mockedLookup = lookup as unknown as ReturnType<typeof vi.fn>;
 
@@ -40,6 +42,12 @@ describe("isBlockedAddress", () => {
     "64:ff9b:0:0:0:0:7f00:1",
     "64:ff9b::",
     "64:ff9b:1::1",
+    "fec0::1",
+    "2001::1",
+    "::7f00:1",
+    "::ffff:0:7f00:1",
+    "192.88.99.1",
+    "fe80::1%en0",
     "not-an-ip",
   ])("blocks %s", (address) => {
     expect(isBlockedAddress(address)).toBe(true);
@@ -51,6 +59,32 @@ describe("isBlockedAddress", () => {
     "2606:4700:4700::1111",
   ])("allows %s", (address) => {
     expect(isBlockedAddress(address)).toBe(false);
+  });
+});
+
+describe("postToDecidim", () => {
+  const mockedPost = axios.post as unknown as ReturnType<typeof vi.fn>;
+
+  it("posts the query to /api with every network guard on", async () => {
+    mockedPost.mockResolvedValue({ data: { data: {} } });
+
+    const result = await postToDecidim("https://x.example", "{ a }");
+
+    expect(result).toEqual({ ok: true, body: { data: {} } });
+    const [url, body, config] = mockedPost.mock.calls[0];
+    expect(url).toBe("https://x.example/api");
+    expect(body).toEqual({ query: "{ a }" });
+    expect(config.proxy).toBe(false);
+    expect(config.maxRedirects).toBe(0);
+    expect(config.maxContentLength).toBeGreaterThan(0);
+    expect(config.httpsAgent.options.lookup).toBe(guardedLookup);
+  });
+
+  it("turns a failed request into a value", async () => {
+    mockedPost.mockRejectedValue(new Error("refused"));
+    expect(await postToDecidim("https://x.example", "{ a }")).toEqual({
+      ok: false,
+    });
   });
 });
 

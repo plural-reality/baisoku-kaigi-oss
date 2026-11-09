@@ -200,7 +200,7 @@
     "import": "読み込む",
     "importing": "議論を読んでいます…",
     "importedFrom": "この議論から読み込みました:",
-    "truncated": "件数が多いため、反応の多いものを中心に読みました。",
+    "truncated": "件数が多いか一部を読めなかったため、読めた範囲で反応の多いものを中心にまとめました。",
     "remove": "出典を外す",
     "invalidUrl": "参加型プロセス、会議体、提案、ディベートの https の URL を入力してください（例: https://example.org/processes/slug）。",
     "unavailable": "Decidim の API から読み取れませんでした。URL を確認するか、しばらくしてからお試しください。",

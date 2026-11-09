@@ -115,6 +115,7 @@ npm run start
 | `PARTICIPANT_TOKEN_ENFORCE` | | | `false` で旧形式トークンを受け付ける(移行用) |
 | `PARTICIPANT_TOKEN_RATE_LIMIT_PER_MIN` | | | トークン発行の IP ごとの上限(既定 30/分) |
 | `DECIDIM_IMPORT_RATE_LIMIT_PER_MIN` | | | Decidim 取り込みのユーザーごとの上限(既定 3/分) |
+| `DECIDIM_TARGET_RATE_LIMIT_PER_MIN` | | | Decidim 取り込みの読み取り先インスタンスごとの上限(既定 10/分) |
 | `USER_ALIAS_SECRET` | | ○ | ユーザー ID 別名の HMAC 鍵 |
 | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | | ○ | Server Action ID をビルド間で固定する鍵 |
 | `NEXT_PUBLIC_SITE_URL` | | | 公開 URL(OGP など) |

@@ -269,6 +269,10 @@ function NewSessionContent() {
   // Background the host already wrote is kept; the draft's title and purpose
   // replace the fields, and the form stays editable before anything is created.
   const handleDecidimImported = (result: DecidimImportResult) => {
+    // Questions from before the import describe other material. Without this they
+    // could be created under the new source before the next preview arrives.
+    previewAbortRef.current?.abort();
+    setPreview(null);
     setTitle(result.title);
     setPurpose(result.purpose);
     setBackgroundInfo((prev) =>

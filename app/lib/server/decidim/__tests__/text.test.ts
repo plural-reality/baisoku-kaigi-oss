@@ -28,6 +28,37 @@ describe("toPlainText", () => {
     expect(toPlainText(input)).toBe(expected);
   });
 
+  it.each([
+    ["zero-width space", "<\u200Bscript>alert(1)<\u200B/script>a"],
+    ["NUL", "<\u0000img src=x onerror=alert(1)>a"],
+    ["BOM", "<\uFEFFsvg onload=alert(1)>a"],
+    ["encoded zero-width", "&lt;&#8203;img src=x&gt;a"],
+    ["doubly encoded", "&amp;lt;&amp;#8203;img src=x&amp;gt;a"],
+  ])("does not rebuild a tag from one split by a %s", (_, input) => {
+    expect(toPlainText(input)).not.toMatch(/<[a-z/]/i);
+  });
+
+  it.each([
+    "<a ",
+    "<p ",
+    "<script ",
+    "<script>",
+    "<!-- ",
+    "&lt;a ",
+  ])("stays fast on a long run of %s", (unit) => {
+    const start = Date.now();
+    toPlainText(unit.repeat(1_000_000));
+    expect(Date.now() - start).toBeLessThan(2000);
+  });
+
+  it("keeps text after an opening tag that holds no code", () => {
+    expect(toPlainText("<title> タグを修正する案")).toBe("タグを修正する案");
+  });
+
+  it("removes lone surrogates", () => {
+    expect(toPlainText("a&#xD800;b")).toBe("ab");
+  });
+
   it("leaves nothing that parses as a tag when markup is unclosed", () => {
     expect(toPlainText("<img src=x onerror=alert(1)")).toBe(
       "< img src=x onerror=alert(1)",
@@ -51,5 +82,6 @@ describe("truncate", () => {
   it("cuts only what is over the limit", () => {
     expect(truncate("abc", 3)).toBe("abc");
     expect(truncate("abcd", 3)).toBe("abc…");
+    expect(truncate("a😀b", 2)).toBe("a…");
   });
 });

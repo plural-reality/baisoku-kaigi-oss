@@ -73,9 +73,12 @@ export const POST = async (request: NextRequest): Promise<Response> => {
   }
 
   const rate = takeRateSlot("decidim-import", userId);
-  if (!rate.allowed) {
+  const targetRate = rate.allowed
+    ? takeRateSlot("decidim-target", target.origin)
+    : rate;
+  if (!targetRate.allowed) {
     return fail("rateLimited", 429, {
-      "Retry-After": String(rate.retryAfterSeconds),
+      "Retry-After": String(targetRate.retryAfterSeconds),
     });
   }
 

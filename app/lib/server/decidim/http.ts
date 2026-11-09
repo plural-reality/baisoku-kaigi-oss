@@ -8,7 +8,7 @@ import axios from "axios";
 // actually dialled, so DNS rebinding does not get around it), redirects are not
 // followed, and the response size and duration are capped.
 
-const REQUEST_TIMEOUT_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 const USER_AGENT =
   "BaisokuKaigi-DecidimImport (+https://github.com/plural-reality/baisoku-kaigi-oss)";
@@ -22,6 +22,7 @@ const BLOCKED_V4: ReadonlyArray<readonly [string, number]> = [
   ["172.16.0.0", 12],
   ["192.0.0.0", 24],
   ["192.0.2.0", 24],
+  ["192.88.99.0", 24],
   ["192.168.0.0", 16],
   ["198.18.0.0", 15],
   ["198.51.100.0", 24],
@@ -31,15 +32,17 @@ const BLOCKED_V4: ReadonlyArray<readonly [string, number]> = [
 ];
 
 const BLOCKED_V6: ReadonlyArray<readonly [string, number]> = [
-  ["::", 128],
-  ["::1", 128],
+  ["::", 96],
+  ["::ffff:0:0:0", 96],
   ["64:ff9b::", 96],
   ["64:ff9b:1::", 48],
   ["100::", 64],
+  ["2001::", 32],
   ["2001:db8::", 32],
   ["2002::", 16],
   ["fc00::", 7],
   ["fe80::", 10],
+  ["fec0::", 10],
   ["ff00::", 8],
 ];
 
@@ -53,9 +56,9 @@ const blockList = ((list: BlockList) => {
   return list;
 })(new BlockList());
 
-// DNS64 resolvers answer with 64:ff9b::<IPv4> on IPv6-only networks. The address
-// that matters is the embedded one, or every site would be refused there and
-// 64:ff9b::7f00:1 would reach loopback through the gateway if it were not.
+// DNS64 resolvers answer with 64:ff9b::<IPv4> on IPv6-only networks. The embedded
+// address decides: blocking the prefix would refuse every site on such a network,
+// and allowing it would let 64:ff9b::7f00:1 through to loopback.
 const NAT64_RE = /^\[64:ff9b::(?:([0-9a-f]{1,4}):)?([0-9a-f]{1,4})\]$/;
 
 const embeddedNat64Ipv4 = (address: string): string | undefined => {
@@ -73,11 +76,12 @@ const embeddedNat64Ipv4 = (address: string): string | undefined => {
 };
 
 export const isBlockedAddress = (address: string): boolean => {
-  const family = isIP(address);
-  const embedded = family === 6 ? embeddedNat64Ipv4(address) : undefined;
+  const bare = address.split("%")[0];
+  const family = isIP(bare);
+  const embedded = family === 6 ? embeddedNat64Ipv4(bare) : undefined;
   return embedded !== undefined
     ? blockList.check(embedded, "ipv4")
-    : family === 0 || blockList.check(address, family === 6 ? "ipv6" : "ipv4");
+    : family === 0 || blockList.check(bare, family === 6 ? "ipv6" : "ipv4");
 };
 
 export const guardedLookup: LookupFunction = (hostname, options, callback) => {

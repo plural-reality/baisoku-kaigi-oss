@@ -55,6 +55,7 @@ describe("parseDecidimUrl", () => {
     ["metadata IP", "https://169.254.169.254/processes/p"],
     ["an internal name", "https://db.internal/processes/p"],
     ["an mDNS name", "https://mini.local/processes/p"],
+    ["a trailing dot", "https://metadata.google.internal./processes/p"],
     ["a bad slug", "https://x.example/processes/%22%7D"],
     ["not a URL", "processes/p"],
     ["an oversized URL", `https://x.example/processes/${"a".repeat(3000)}`],

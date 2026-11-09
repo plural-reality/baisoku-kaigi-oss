@@ -20,11 +20,14 @@ const WINDOW_MS = 60_000;
 // fresh identities for spam / vote stuffing). Keyed by client IP, not identity,
 // because the caller has none yet.
 // `decidim-import`: each call reads a third party's API and runs an LLM call.
+// `decidim-target`: keyed by the instance being read, so rotating identities
+// cannot turn this server into a load source against someone else's site.
 export type PreviewKind =
   | "preview"
   | "suggestions"
   | "participant-token"
-  | "decidim-import";
+  | "decidim-import"
+  | "decidim-target";
 
 const positiveInt = (key: string, fallback: number): number => {
   const parsed = Number(process.env[key]);
@@ -38,7 +41,9 @@ const maxPerWindow = (kind: PreviewKind): number =>
       ? positiveInt("PARTICIPANT_TOKEN_RATE_LIMIT_PER_MIN", 30)
       : kind === "decidim-import"
         ? positiveInt("DECIDIM_IMPORT_RATE_LIMIT_PER_MIN", 3)
-        : positiveInt("SUGGESTIONS_RATE_LIMIT_PER_MIN", 6);
+        : kind === "decidim-target"
+          ? positiveInt("DECIDIM_TARGET_RATE_LIMIT_PER_MIN", 10)
+          : positiveInt("SUGGESTIONS_RATE_LIMIT_PER_MIN", 6);
 
 const cacheTtlMs = (): number => positiveInt("PREVIEW_CACHE_TTL_MS", 60_000);
 

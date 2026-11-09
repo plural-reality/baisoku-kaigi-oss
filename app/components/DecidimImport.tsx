@@ -60,7 +60,11 @@ export const DecidimImport = ({
         (response) => onImported(response.data),
         (err: unknown) => {
           console.error("Decidim import failed:", sanitizeErrorForLog(err));
-          setError(responseMessage(err) ?? t("importFailed"));
+          setError(
+            axios.isAxiosError(err) && err.response?.status === 409
+              ? t("busy")
+              : (responseMessage(err) ?? t("importFailed")),
+          );
         },
       )
       .finally(() => setIsImporting(false));

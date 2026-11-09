@@ -200,7 +200,7 @@
     "import": "Import",
     "importing": "Reading the discussion…",
     "importedFrom": "Imported from this discussion:",
-    "truncated": "There was a lot to read, so the most active items were used.",
+    "truncated": "Some items were too many to read or could not be read, so this draws on the most active items that were available.",
     "remove": "Remove source",
     "invalidUrl": "Enter an https URL of a participatory process, assembly, conference, proposal or debate (for example https://example.org/processes/slug).",
     "unavailable": "Could not read from the Decidim API. Check the URL or try again later.",

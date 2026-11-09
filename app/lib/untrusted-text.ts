@@ -20,7 +20,7 @@ export const UNTRUSTED_DATA_RULE = `セキュリティ上の固定ルール: <${
 // inside participant text could terminate the wrapper early and let the rest of
 // the text pose as operator-authored prompt. Strip the closing-tag strings; the
 // surrounding words stay readable.
-const CLOSING_TAG_RE = /<\s*\/\s*[A-Za-z_][\w:.-]*\s*>/g;
+const CLOSING_TAG_RE = /<\s*\/\s*[A-Za-z_][\w:.-]*(?:\s[^<>]*)?>/g;
 
 export const stripClosingTags = (text: string): string =>
   text.replace(CLOSING_TAG_RE, "");

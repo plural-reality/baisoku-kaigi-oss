@@ -37,6 +37,7 @@ const isPublicHostname = (hostname: string): boolean =>
   isIP(hostname) === 0 &&
   !hostname.startsWith("[") &&
   hostname.includes(".") &&
+  !hostname.endsWith(".") &&
   !INTERNAL_SUFFIXES.some((suffix) => hostname.endsWith(suffix));
 
 const parseAbsolute = (raw: string): URL | undefined =>

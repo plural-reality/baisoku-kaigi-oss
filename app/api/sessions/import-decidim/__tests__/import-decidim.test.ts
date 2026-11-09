@@ -100,6 +100,21 @@ describe("POST /api/sessions/import-decidim", () => {
     expect((await post({ url: URL_P })).status).toBe(502);
   });
 
+  it("limits reads per instance across identities", async () => {
+    const results = await Array.from(
+      { length: 11 },
+      (_, index) => index,
+    ).reduce<Promise<number[]>>(async (previous, index) => {
+      const statuses = await previous;
+      mockedUser.mockResolvedValue(`user-${index}`);
+      return [...statuses, (await post({ url: URL_P })).status];
+    }, Promise.resolve([]));
+
+    expect(results.slice(0, 10).every((status) => status === 200)).toBe(true);
+    expect(results[10]).toBe(429);
+    expect(mockedRead).toHaveBeenCalledTimes(10);
+  });
+
   it("serves a repeat from cache and rate limits distinct imports", async () => {
     await post({ url: URL_P });
     await post({ url: URL_P });

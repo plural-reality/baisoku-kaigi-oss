@@ -16,6 +16,7 @@ const MAX_COMPONENTS = 6;
 const MAX_SCHEMA_RETRIES = 6;
 const READ_BUDGET_MS = 40_000;
 
+const MAX_TITLE_CHARS = 300;
 const MAX_DESCRIPTION_CHARS = 3000;
 const MAX_ITEM_BODY_CHARS = 1000;
 const MAX_COMMENT_CHARS = 400;
@@ -93,8 +94,12 @@ const asArray = (value: unknown): readonly unknown[] =>
   Array.isArray(value) ? value : [];
 const asNumber = (value: unknown): number =>
   typeof value === "number" && Number.isFinite(value) ? value : 0;
+// Ids are inlined into later queries, and an instance's response decides them.
 const asId = (value: unknown): string =>
-  typeof value === "string" || typeof value === "number" ? String(value) : "";
+  (typeof value === "string" || typeof value === "number") &&
+  /^\d+$/.test(String(value))
+    ? String(value)
+    : "";
 
 // --- query text -------------------------------------------------------------
 
@@ -235,12 +240,17 @@ const pickTranslation = (value: unknown, language: string): string => {
   return toPlainText(raw);
 };
 
-const decodeComments = (value: unknown): readonly DecidimComment[] =>
+// The query asks for one level of replies; a response nested deeper is ignored.
+const decodeComments = (
+  value: unknown,
+  depthLeft: number = 1,
+): readonly DecidimComment[] =>
   asArray(value).flatMap((entry) => {
     const json = asJson(entry);
     if (!json) return [];
     const text = typeof json.body === "string" ? toPlainText(json.body) : "";
-    const replies = decodeComments(json.comments);
+    const replies =
+      depthLeft > 0 ? decodeComments(json.comments, depthLeft - 1) : [];
     return text.length > 0
       ? [
           {
@@ -288,6 +298,7 @@ export const selectForPrompt = (
     .sort((a, b) => engagement(b) - engagement(a))
     .map((item) => ({
       ...item,
+      title: truncate(item.title, MAX_TITLE_CHARS),
       body: truncate(item.body, MAX_ITEM_BODY_CHARS),
       comments: [...item.comments]
         .sort((a, b) => b.upVotes - a.upVotes)
@@ -317,34 +328,11 @@ export const selectForPrompt = (
 
 // --- reading a space --------------------------------------------------------
 
-const findSpaceId = async (
-  post: DecidimPost,
-  target: DecidimTarget,
-  schema: Schema,
-): Promise<string | undefined> => {
-  const collection =
-    target.spaceKind === "assembly" ? "assemblies" : "conferences";
-  const result = await query(
-    post,
-    target.origin,
-    () => `{ ${collection} { id slug } }`,
-    schema,
-  );
-  const match = result.ok
-    ? asArray(result.data[collection]).find(
-        (entry) => asJson(entry)?.slug === target.slug,
-      )
-    : undefined;
-  return asId(asJson(match)?.id) || undefined;
-};
-
 const readSpace = async (
   post: DecidimPost,
   target: DecidimTarget,
   schema: Schema,
-): Promise<
-  QueryResult | Readonly<{ ok: false; reason: "notFound"; schema: Schema }>
-> => {
+): Promise<QueryResult> => {
   if (target.spaceKind === "process") {
     return query(
       post,
@@ -354,8 +342,26 @@ const readSpace = async (
       schema,
     );
   }
-  const id = await findSpaceId(post, target, schema);
-  return id === undefined
+  // Assemblies and conferences have no slug argument.
+  const collection =
+    target.spaceKind === "assembly" ? "assemblies" : "conferences";
+  const list = await query(
+    post,
+    target.origin,
+    () => `{ ${collection} { id slug } }`,
+    schema,
+  );
+  if (!list.ok) {
+    return list;
+  }
+  const id = asId(
+    asJson(
+      asArray(list.data[collection]).find(
+        (entry) => asJson(entry)?.slug === target.slug,
+      ),
+    )?.id,
+  );
+  return id === ""
     ? { ok: false, reason: "notFound", schema }
     : query(
         post,
@@ -398,7 +404,10 @@ const readComponentPages = async (
   }
   const connection = asJson(asJson(result.data.component)?.[collection]);
   const pageInfo = asJson(connection?.pageInfo);
-  const items = asArray(connection?.edges).flatMap((edge) =>
+  const edges = asArray(connection?.edges);
+  // A field error nulls out its edge and leaves the rest of the page usable.
+  const lostEdge = edges.some((edge) => !asJson(asJson(edge)?.node));
+  const items = edges.flatMap((edge) =>
     decodeItem(
       collection === "proposals" ? "proposal" : "debate",
       asJson(edge)?.node,
@@ -410,7 +419,7 @@ const readComponentPages = async (
       ? pageInfo.endCursor
       : undefined;
   if (cursor === undefined) {
-    return { items, more: false, schema: result.schema };
+    return { items, more: lostEdge, schema: result.schema };
   }
   if (pagesLeft <= 1 || reader.isOverBudget()) {
     return { items, more: true, schema: result.schema };
@@ -423,7 +432,11 @@ const readComponentPages = async (
     cursor,
     pagesLeft - 1,
   );
-  return { ...rest, items: [...items, ...rest.items] };
+  return {
+    ...rest,
+    items: [...items, ...rest.items],
+    more: rest.more || lostEdge,
+  };
 };
 
 type Component = Readonly<{
@@ -472,7 +485,7 @@ const readResource = async (
     : undefined;
   return {
     items: decodeItem(resource.kind, node, reader.language),
-    more: false,
+    more: !result.ok,
     schema: result.schema,
   };
 };
@@ -547,7 +560,10 @@ export const readDecidimDiscussion = async (
   return {
     ok: true,
     discussion: {
-      spaceTitle: pickTranslation(spaceJson.title, language),
+      spaceTitle: truncate(
+        pickTranslation(spaceJson.title, language),
+        MAX_TITLE_CHARS,
+      ),
       spaceDescription: truncate(
         descriptionParts.filter((part) => part.length > 0).join("\n\n"),
         MAX_DESCRIPTION_CHARS,

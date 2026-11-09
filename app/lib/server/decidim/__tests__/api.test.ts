@@ -347,6 +347,114 @@ describe("readDecidimDiscussion", () => {
     });
   });
 
+  it("flags a page that lost an edge to a field error", async () => {
+    const post = fakeInstance((query) =>
+      query.includes("participatoryProcess")
+        ? SPACE
+        : {
+            errors: [{ message: "Cannot return null for non-nullable field" }],
+            data: {
+              component: {
+                proposals: {
+                  pageInfo: { hasNextPage: false },
+                  edges: [
+                    {
+                      node: { id: "1", title: ja("残った"), body: ja("本文") },
+                    },
+                    null,
+                  ],
+                },
+              },
+            },
+          },
+    );
+
+    const result = await readDecidimDiscussion(
+      post,
+      target(`${URL_P}/f/2/proposals`),
+      "ja",
+    );
+
+    expect(result).toMatchObject({
+      discussion: { items: [{ title: "残った" }], truncated: true },
+    });
+  });
+
+  it("reports a failed single resource as unavailable, not empty", async () => {
+    const post: DecidimPost = async (_origin, query) =>
+      query.includes("participatoryProcess")
+        ? { ok: true, body: SPACE }
+        : { ok: false };
+
+    expect(
+      await readDecidimDiscussion(
+        post,
+        target(`${URL_P}/f/2/proposals/7`),
+        "ja",
+      ),
+    ).toEqual({ ok: false, reason: "unavailable" });
+  });
+
+  it("reports a failed assembly list as unavailable, not missing", async () => {
+    const down: DecidimPost = async () => ({ ok: false });
+
+    expect(
+      await readDecidimDiscussion(
+        down,
+        target("https://x.example/assemblies/town"),
+        "ja",
+      ),
+    ).toEqual({ ok: false, reason: "unavailable" });
+  });
+
+  it("never inlines an id that is not digits", async () => {
+    const post = fakeInstance((query) =>
+      query.includes("participatoryProcess")
+        ? {
+            data: {
+              space: {
+                title: ja("空間"),
+                components: [
+                  { id: "1){a}} mutation M{b", __typename: "Proposals" },
+                ],
+              },
+            },
+          }
+        : proposalsPage([]),
+    );
+
+    await readDecidimDiscussion(post, target(URL_P), "ja");
+
+    expect(post.queries).toHaveLength(1);
+  });
+
+  it("caps a huge space title and ignores comments nested past the query", async () => {
+    const deep = (depth: number): unknown =>
+      depth === 0 ? [] : [{ body: `d${depth}`, comments: deep(depth - 1) }];
+    const post = fakeInstance((query) =>
+      query.includes("participatoryProcess")
+        ? {
+            data: {
+              space: {
+                title: ja("x".repeat(50_000)),
+                components: [{ id: "2", __typename: "Proposals" }],
+              },
+            },
+          }
+        : proposalsPage([
+            { id: "1", title: ja("提案"), body: ja("本文"), comments: deep(5) },
+          ]),
+    );
+
+    const result = await readDecidimDiscussion(post, target(URL_P), "ja");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.discussion.spaceTitle.length).toBeLessThanOrEqual(301);
+      expect(result.discussion.items[0].comments).toHaveLength(2);
+    }
+  });
+
   it("finds assemblies by slug because they have no slug argument", async () => {
     const post = fakeInstance((query) =>
       query.includes("assemblies")
