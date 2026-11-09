@@ -4,8 +4,6 @@ import axios from "axios";
 import { type ContentLanguage, withOutputLanguage } from "./content-language";
 import type { Json } from "./database.types";
 import { callViaCli, localCliBackend } from "./llm-cli";
-import type { DecidimDiscussion, DecidimItem } from "./server/decidim/api";
-import { toPlainText, truncate } from "./server/decidim/text";
 import {
   ACCURATE_MODEL,
   FAST_MODEL,
@@ -16,6 +14,8 @@ import {
   type JsonSchemaResponseFormat,
   structuredOutputFields,
 } from "./llm-structured-output";
+import type { DecidimDiscussion, DecidimItem } from "./server/decidim/api";
+import { toPlainText, truncate } from "./server/decidim/text";
 import {
   UNTRUSTED_DATA_RULE,
   untrustedName,
