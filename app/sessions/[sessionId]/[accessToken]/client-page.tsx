@@ -2537,7 +2537,7 @@ export default function AdminPage({
                         {tA("background")}
                       </p>
                       <p
-                        className="mt-1 leading-relaxed whitespace-pre-wrap"
+                        className="mt-1 leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]"
                         title={data.facilitatorContext ?? undefined}
                       >
                         {data.facilitatorContext
