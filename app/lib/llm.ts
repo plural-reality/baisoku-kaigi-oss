@@ -3,6 +3,8 @@ import * as Sentry from "@sentry/nextjs";
 import axios from "axios";
 import { type ContentLanguage, withOutputLanguage } from "./content-language";
 import { callViaCli, localCliBackend } from "./llm-cli";
+import type { DecidimDiscussion, DecidimItem } from "./server/decidim/api";
+import { toPlainText, truncate } from "./server/decidim/text";
 import {
   UNTRUSTED_DATA_RULE,
   untrustedName,
@@ -911,3 +913,120 @@ ${surveyResultsText}
   );
   return response.trim();
 }
+
+export type DecidimSessionBrief = Readonly<{
+  title: string;
+  purpose: string;
+  background: string;
+}>;
+
+const BRIEF_SECTIONS = ["TITLE", "PURPOSE", "BACKGROUND"] as const;
+const MAX_BRIEF_TITLE_CHARS = 120;
+const MAX_BRIEF_PURPOSE_CHARS = 1000;
+const MAX_BRIEF_BACKGROUND_CHARS = 8000;
+
+const briefSection = (raw: string, name: string): string =>
+  new RegExp(`===${name}===\\n?([\\s\\S]*?)(?=\\n?===[A-Z]+===|$)`)
+    .exec(raw)?.[1]
+    ?.trim() ?? "";
+
+// Delimited rather than JSON for the same reason as the individual report: the
+// long background never has to survive JSON-escaping. The output is derived from
+// third-party text, so it is treated like that text. Undefined when a section is
+// missing, because a half-filled session is worse than asking the host to retry.
+export const parseDecidimSessionBrief = (
+  raw: string,
+): DecidimSessionBrief | undefined => {
+  const [title, purpose, background] = BRIEF_SECTIONS.map((name) =>
+    toPlainText(briefSection(raw, name)),
+  );
+  return title && purpose && background
+    ? {
+        title: truncate(title.replace(/\s+/g, " "), MAX_BRIEF_TITLE_CHARS),
+        purpose: truncate(purpose, MAX_BRIEF_PURPOSE_CHARS),
+        background: truncate(background, MAX_BRIEF_BACKGROUND_CHARS),
+      }
+    : undefined;
+};
+
+const decidimCommentStance = (alignment: number): string =>
+  alignment > 0 ? "賛成" : alignment < 0 ? "反対" : "中立";
+
+// Author names are never read from the API, so none can reach the session.
+const formatDecidimItem = (item: DecidimItem, index: number): string => {
+  const comments = item.comments
+    .map(
+      (comment) =>
+        `  - [${decidimCommentStance(comment.alignment)}・支持${comment.upVotes}] ${wrapUntrusted(comment.text, { kind: "decidim_comment" })}`,
+    )
+    .join("\n");
+  return [
+    `${index + 1}. ${item.kind === "proposal" ? "提案" : "ディベート"}（賛同${item.voteCount}・コメント${item.comments.length}件）`,
+    `  題: ${wrapUntrusted(item.title, { kind: "decidim_title" })}`,
+    ...(item.body
+      ? [`  本文: ${wrapUntrusted(item.body, { kind: "decidim_body" })}`]
+      : []),
+    ...(comments ? [comments] : []),
+  ].join("\n");
+};
+
+export const buildDecidimBriefPrompt = (
+  discussion: DecidimDiscussion,
+): string => `<role>
+あなたは市民参加の議論を読み解くファシリテーターです。Decidim（市民参加プラットフォーム）で交わされた提案とコメントを読み、参加者の認識を5段階評価で集める「倍速会議」のセッションを準備します。
+</role>
+<task>
+以下の議論を読み、セッションのタイトル、目的、背景情報を書いてください。
+- タイトル: 何についてのセッションか分かる40字以内の名詞句。
+- 目的: この議論を踏まえて参加者の間で何を明らかにしたいか。合意がありそうな点、意見が分かれている点、まだ分かっていない点を意識して2〜4文で。
+- 背景情報: 議論の経緯、主な論点と対立軸、具体的な提案とその反応を、箇条書きを交えて1500字以内で。書かれていないことを補わず、意見は多寡が分かるように書く。個人を特定できる情報は含めない。
+</task>
+<discussion>
+  <space_title>${wrapUntrusted(discussion.spaceTitle, { kind: "decidim_space_title" })}</space_title>
+  <space_description>${wrapUntrusted(discussion.spaceDescription, { kind: "decidim_space_description" })}</space_description>
+  <items>
+${discussion.items.map(formatDecidimItem).join("\n")}
+  </items>
+</discussion>
+<output>
+次の形式だけで出力してください。区切り行はそのまま書き、前後に説明文やコードフェンスを付けないでください。
+===TITLE===
+タイトル
+===PURPOSE===
+目的
+===BACKGROUND===
+背景情報
+</output>`;
+
+// Written by this code, not the model, so the source survives a model that
+// leaves it out.
+const decidimSourceLine = (
+  sourceUrl: string,
+  language: ContentLanguage | undefined,
+): string =>
+  language === "en" ? `Source: ${sourceUrl}` : `出典: ${sourceUrl}`;
+
+export const generateDecidimSessionBrief = (input: {
+  discussion: DecidimDiscussion;
+  sourceUrl: string;
+  language?: ContentLanguage;
+}): Promise<DecidimSessionBrief | undefined> =>
+  callLLM(
+    withOutputLanguage(
+      [
+        { role: "system", content: UNTRUSTED_DATA_RULE },
+        { role: "user", content: buildDecidimBriefPrompt(input.discussion) },
+      ],
+      input.language,
+    ),
+    FAST_MODEL,
+    { reasoningEffort: "low", maxTokens: 4096 },
+  ).then((response) => {
+    const brief = parseDecidimSessionBrief(response);
+    return (
+      brief && {
+        ...brief,
+        background: `${decidimSourceLine(input.sourceUrl, input.language)}\n\n${brief.background}`,
+      }
+    );
+  });

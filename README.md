@@ -9,6 +9,7 @@
 ## 主な機能
 
 - **セッション作成**: 目的と背景情報から、LLM が問い(ステートメント)を作る
+- **Decidim からの取り込み**: Decidim の参加型プロセスや提案の URL を貼ると、公開 GraphQL API(`https://<host>/api`)から提案とコメントを読み、セッションの下書きと問いを作る。インスタンス側のインストールは不要で、Decidim には書き込まない。出典の URL はセッションに残る
 - **回答収集**: 参加者は 5 段階評価と自由記述で答える
 - **管理画面**: 回答状況をリアルタイムで確認する
 - **分析レポート**: 合意点・相違点・不明点を LLM がまとめる
@@ -113,6 +114,7 @@ npm run start
 | `PARTICIPANT_TOKEN_SECRET` | 推奨 | ○ | 参加者トークンの署名鍵 |
 | `PARTICIPANT_TOKEN_ENFORCE` | | | `false` で旧形式トークンを受け付ける(移行用) |
 | `PARTICIPANT_TOKEN_RATE_LIMIT_PER_MIN` | | | トークン発行の IP ごとの上限(既定 30/分) |
+| `DECIDIM_IMPORT_RATE_LIMIT_PER_MIN` | | | Decidim 取り込みのユーザーごとの上限(既定 3/分) |
 | `USER_ALIAS_SECRET` | | ○ | ユーザー ID 別名の HMAC 鍵 |
 | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | | ○ | Server Action ID をビルド間で固定する鍵 |
 | `NEXT_PUBLIC_SITE_URL` | | | 公開 URL(OGP など) |

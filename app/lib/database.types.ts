@@ -410,6 +410,7 @@ export type Database = {
           id: string;
           is_public: boolean;
           language: string;
+          source_url: string | null;
           title: string;
           updated_at: string;
         };
@@ -424,6 +425,7 @@ export type Database = {
           id?: string;
           is_public?: boolean;
           language?: string;
+          source_url?: string | null;
           title: string;
           updated_at?: string;
         };
@@ -438,6 +440,7 @@ export type Database = {
           id?: string;
           is_public?: boolean;
           language?: string;
+          source_url?: string | null;
           title?: string;
           updated_at?: string;
         };

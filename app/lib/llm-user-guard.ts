@@ -19,7 +19,12 @@ const WINDOW_MS = 60_000;
 // the unauthenticated minting endpoint was otherwise an unbounded source of
 // fresh identities for spam / vote stuffing). Keyed by client IP, not identity,
 // because the caller has none yet.
-export type PreviewKind = "preview" | "suggestions" | "participant-token";
+// `decidim-import`: each call reads a third party's API and runs an LLM call.
+export type PreviewKind =
+  | "preview"
+  | "suggestions"
+  | "participant-token"
+  | "decidim-import";
 
 const positiveInt = (key: string, fallback: number): number => {
   const parsed = Number(process.env[key]);
@@ -31,7 +36,9 @@ const maxPerWindow = (kind: PreviewKind): number =>
     ? positiveInt("PREVIEW_RATE_LIMIT_PER_MIN", 6)
     : kind === "participant-token"
       ? positiveInt("PARTICIPANT_TOKEN_RATE_LIMIT_PER_MIN", 30)
-      : positiveInt("SUGGESTIONS_RATE_LIMIT_PER_MIN", 6);
+      : kind === "decidim-import"
+        ? positiveInt("DECIDIM_IMPORT_RATE_LIMIT_PER_MIN", 3)
+        : positiveInt("SUGGESTIONS_RATE_LIMIT_PER_MIN", 6);
 
 const cacheTtlMs = (): number => positiveInt("PREVIEW_CACHE_TTL_MS", 60_000);
 

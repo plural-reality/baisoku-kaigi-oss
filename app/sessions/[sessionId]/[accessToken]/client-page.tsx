@@ -115,6 +115,7 @@ interface SessionAdminData {
   goal: string;
   facilitatorContext: string;
   facilitatorGoal: string;
+  sourceUrl?: string | null;
   isPublic: boolean;
   createdAt: string;
   statements: StatementWithStats[];
@@ -2544,6 +2545,22 @@ export default function AdminPage({
                           : tA("notSet")}
                       </p>
                     </div>
+                    {data.sourceUrl && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-[0.12em] dark:text-muted-foreground">
+                          {tA("source")}
+                        </p>
+                        <a
+                          href={data.sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          data-testid="session-source-url"
+                          className="mt-1 block break-all underline underline-offset-2"
+                        >
+                          {data.sourceUrl}
+                        </a>
+                      </div>
+                    )}
                   </div>
                 </section>
 

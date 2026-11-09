@@ -554,4 +554,59 @@ describe("POST /api/sessions", () => {
       }),
     );
   });
+
+  it("keeps a Decidim source URL in canonical form", async () => {
+    mockedGetUserId.mockResolvedValue(USER_ID);
+    mockedGenerateStatements.mockResolvedValue(["Q"]);
+    mockedCreateSession.mockResolvedValue({
+      sessionId: "decidim-session",
+      adminAccessToken: "decidim-token",
+    });
+    mockSupabaseSequence({
+      sessions: [
+        mockSuccess({ id: "decidim-session" }),
+        mockSuccess({ id: "decidim-session" }),
+      ],
+    });
+
+    const res = await POST(
+      createAuthedRequest(USER_ID, {
+        method: "POST",
+        body: {
+          title: "T",
+          goal: "G",
+          context: "C",
+          sourceUrl: "https://x.example/processes/env/?a=1",
+        },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const updates = mockedFrom.mock.results.flatMap(
+      (result) =>
+        (result.value as { update: ReturnType<typeof vi.fn> }).update.mock
+          .calls,
+    );
+    expect(updates[0][0]).toMatchObject({
+      source_url: "https://x.example/processes/env",
+    });
+  });
+
+  it.each([
+    ["a non-https URL", "http://x.example/processes/env"],
+    ["a script URL", "javascript:alert(1)"],
+    ["a non-string", 1],
+  ])("rejects %s as a source URL", async (_, sourceUrl) => {
+    mockedGetUserId.mockResolvedValue(USER_ID);
+
+    const res = await POST(
+      createAuthedRequest(USER_ID, {
+        method: "POST",
+        body: { title: "T", goal: "G", context: "C", sourceUrl },
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(mockedCreateSession).not.toHaveBeenCalled();
+  });
 });

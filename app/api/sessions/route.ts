@@ -6,6 +6,7 @@ import { createSession } from "@/lib/api/client";
 import type { CreateSessionRequest } from "@/lib/api/types";
 import { getHostUserIdFromRequest, getUserIdFromRequest } from "@/lib/auth";
 import { isContentLanguage, toContentLanguage } from "@/lib/content-language";
+import { parseDecidimUrl } from "@/lib/server/decidim/url";
 import { respondExclusive } from "@/lib/server/single-flight";
 import { sessionParticipantContextFields } from "@/lib/session-context";
 import { supabase } from "@/lib/supabase";
@@ -183,6 +184,7 @@ export async function POST(request: NextRequest) {
           facilitatorContext,
           facilitatorGoal,
           language,
+          sourceUrl,
         } = body as {
           title?: unknown;
           context?: unknown;
@@ -190,7 +192,19 @@ export async function POST(request: NextRequest) {
           facilitatorContext?: unknown;
           facilitatorGoal?: unknown;
           language?: unknown;
+          sourceUrl?: unknown;
         };
+
+        const source =
+          typeof sourceUrl === "string"
+            ? parseDecidimUrl(sourceUrl)
+            : undefined;
+        if (typeof sourceUrl !== "undefined" && source === undefined) {
+          return NextResponse.json(
+            { error: "Invalid value for sourceUrl" },
+            { status: 400 },
+          );
+        }
 
         if (typeof language !== "undefined" && !isContentLanguage(language)) {
           return NextResponse.json(
@@ -367,6 +381,7 @@ export async function POST(request: NextRequest) {
               goal: publicGoalValue,
               context: publicContextValue,
               language: contentLanguage,
+              ...(source ? { source_url: source.canonicalUrl } : {}),
             })
             .eq("id", backendRes.sessionId);
 
