@@ -143,7 +143,8 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { statementId, value, responseType, textResponse } = body;
+    const { statementId, value, responseType, textResponse, answerSource } =
+      body;
 
     if (!statementId) {
       return NextResponse.json(
@@ -230,6 +231,15 @@ export async function POST(
       typeof textResponse === "string" && textResponse.trim().length > 0
         ? textResponse.trim()
         : null;
+    // Optional provenance of a free-text answer ('typed' or 'suggested' = a W6
+    // suggestion was clicked). The column is only written when the client sends
+    // a valid value. A scale answer clears it (NULL), so a statement first
+    // answered with a suggestion and then re-answered on the scale does not keep
+    // a stale 'suggested'. Requires migration 20261107000002.
+    const answerSourceColumn =
+      answerSource === "typed" || answerSource === "suggested"
+        ? { answer_source: answerSource }
+        : {};
     const payload =
       normalizedType === "scale"
         ? {
@@ -240,6 +250,7 @@ export async function POST(
             value,
             text_response: scaleText,
             updated_at: nowIso,
+            answer_source: null,
           }
         : {
             participant_user_id: userId,
@@ -249,6 +260,7 @@ export async function POST(
             value: null,
             text_response: (textResponse as string).trim(),
             updated_at: nowIso,
+            ...answerSourceColumn,
           };
 
     const { data: response, error: upsertError } = await supabase

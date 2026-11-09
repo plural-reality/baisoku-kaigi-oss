@@ -270,6 +270,87 @@ describe("POST /api/sessions/[sessionId]/responses", () => {
     expect(body.response.value).toBe(2);
   });
 
+  // The upsert payload sent to the `responses` builder of this request.
+  const responsesUpsertPayload = (): Record<string, unknown> => {
+    const index = mockedFrom.mock.calls.findIndex(
+      ([table]) => table === "responses",
+    );
+    const builder = mockedFrom.mock.results[index]?.value as {
+      upsert: ReturnType<typeof vi.fn>;
+    };
+    return builder.upsert.mock.calls[0][0];
+  };
+
+  it.each([
+    ["suggested", { answer_source: "suggested" }],
+    ["typed", { answer_source: "typed" }],
+  ])("stores answerSource %j on a free-text answer", async (answerSource, expected) => {
+    mockedGetUserId.mockResolvedValue(USER_ID);
+    mockSupabaseSequence({
+      statements: [mockSuccess({ id: "st1" })],
+      participants: [mockSuccess({ user_id: USER_ID })],
+      responses: [
+        mockSuccess({
+          id: "resp-ft",
+          participant_user_id: USER_ID,
+          session_id: SESSION_ID,
+          statement_id: "st1",
+          response_type: "free_text",
+          value: null,
+          text_response: "picked",
+          created_at: "2026-01-01T00:00:00Z",
+        }),
+      ],
+    });
+
+    const req = createAuthedRequest(USER_ID, {
+      method: "POST",
+      body: {
+        statementId: "st1",
+        responseType: "free_text",
+        textResponse: "picked",
+        answerSource,
+      },
+    });
+    const res = await POST(req, makeParams());
+
+    expect(res.status).toBe(200);
+    expect(responsesUpsertPayload()).toMatchObject(expected);
+  });
+
+  it.each([
+    undefined,
+    "bogus",
+    "suggested",
+  ])("clears answer_source on a scale answer (answerSource %j)", async (answerSource) => {
+    mockedGetUserId.mockResolvedValue(USER_ID);
+    mockSupabaseSequence({
+      statements: [mockSuccess({ id: "st1" })],
+      participants: [mockSuccess({ user_id: USER_ID })],
+      responses: [
+        mockSuccess({
+          id: "resp-s",
+          participant_user_id: USER_ID,
+          session_id: SESSION_ID,
+          statement_id: "st1",
+          response_type: "scale",
+          value: 1,
+          text_response: null,
+          created_at: "2026-01-01T00:00:00Z",
+        }),
+      ],
+    });
+
+    const req = createAuthedRequest(USER_ID, {
+      method: "POST",
+      body: { statementId: "st1", value: 1, answerSource },
+    });
+    const res = await POST(req, makeParams());
+
+    expect(res.status).toBe(200);
+    expect(responsesUpsertPayload()).toMatchObject({ answer_source: null });
+  });
+
   it("returns 400 when free_text response has empty textResponse", async () => {
     mockedGetUserId.mockResolvedValue(USER_ID);
     const req = createAuthedRequest(USER_ID, {

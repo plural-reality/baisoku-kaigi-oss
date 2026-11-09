@@ -23,10 +23,12 @@ import axios from "axios";
 import {
   callLLM,
   callLLMStreaming,
+  callLLMWithMeta,
   extractUpstreamError,
   LLMAbortedError,
   LLMUnavailableError,
 } from "../llm";
+import { stringListFormat } from "../llm-structured-output";
 
 const mockedPost = axios.post as ReturnType<typeof vi.fn>;
 
@@ -311,6 +313,70 @@ describe("callLLM", () => {
 
     await callLLM([{ role: "user", content: "hi" }], "custom-model");
     expect(mockedPost.mock.calls[0][1].model).toBe("custom-model");
+  });
+
+  it("keeps OpenRouter's response id, resolved model and usage", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 };
+    mockedPost.mockResolvedValueOnce({
+      data: {
+        id: "gen-123",
+        model: "google/resolved-model",
+        usage,
+        choices: [{ message: { content: "text" } }],
+      },
+    });
+
+    await expect(
+      callLLMWithMeta([{ role: "user", content: "hi" }], "requested-model"),
+    ).resolves.toEqual({
+      content: "text",
+      model: "google/resolved-model",
+      generationId: "gen-123",
+      usage,
+    });
+  });
+
+  it("falls back to the requested model when the response omits metadata", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    mockedPost.mockResolvedValueOnce(makeSuccessResponse("text"));
+
+    await expect(
+      callLLMWithMeta([{ role: "user", content: "hi" }], "requested-model"),
+    ).resolves.toEqual({
+      content: "text",
+      model: "requested-model",
+      generationId: null,
+      usage: null,
+    });
+    // Unstructured calls send no response_format / provider fields.
+    expect(mockedPost.mock.calls[0][1]).not.toHaveProperty("response_format");
+    expect(mockedPost.mock.calls[0][1]).not.toHaveProperty("provider");
+  });
+
+  it("sends a strict json_schema response_format and requires the parameter", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    mockedPost.mockResolvedValueOnce(makeSuccessResponse('{"items":[]}'));
+    const format = stringListFormat("test_list", "items");
+
+    await callLLM([{ role: "user", content: "hi" }], "m", {
+      responseFormat: format,
+    });
+    expect(mockedPost.mock.calls[0][1]).toMatchObject({
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "test_list",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: { items: { type: "array", items: { type: "string" } } },
+            required: ["items"],
+            additionalProperties: false,
+          },
+        },
+      },
+    });
   });
 
   describe("retry logic", () => {

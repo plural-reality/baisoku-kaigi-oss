@@ -5,6 +5,8 @@ import {
   generatePlanMarkdown,
   generateSingleSurveyStatement,
   generateSurveyStatements,
+  generateSurveyStatementsWithMeta,
+  parseStatementList,
 } from "../llm";
 import { __resetLLMLimiter } from "../llm-limiter";
 import { validateSurveyStatements } from "../survey-validation";
@@ -15,7 +17,28 @@ const requestAt = (index: number) =>
     model: string;
     messages: { content: string }[];
     reasoning?: { effort?: string; max_tokens?: number };
+    response_format?: { json_schema: { name: string } };
   };
+
+// Strict structured output: { statements: string[] } at the top level, routed
+// only to providers that honour response_format.
+const statementsFormat = (name: string) => ({
+  response_format: {
+    type: "json_schema",
+    json_schema: {
+      name,
+      strict: true,
+      schema: {
+        type: "object",
+        properties: {
+          statements: { type: "array", items: { type: "string" } },
+        },
+        required: ["statements"],
+        additionalProperties: false,
+      },
+    },
+  },
+});
 
 const statements = Array.from(
   { length: 15 },
@@ -65,6 +88,7 @@ describe("batch model routing through the actual agent LLM entry point", () => {
         model: "google/gemini-3.5-flash",
         temperature: 0.7,
         reasoning: { max_tokens: 1 },
+        ...statementsFormat("survey_statements"),
       }),
       expect.objectContaining({ timeout: 45000 }),
     );
@@ -82,6 +106,7 @@ describe("batch model routing through the actual agent LLM entry point", () => {
       reasoning: { effort: "low" },
     });
     expect(body.reasoning).toEqual({ effort: "low" });
+    expect(body).toMatchObject(statementsFormat("survey_statements"));
     expect(body).not.toHaveProperty("thinkingConfig");
     // messages[0] is the fixed untrusted-data system guard (audit H1); the
     // prompt itself is the user message.
@@ -115,9 +140,12 @@ describe("batch model routing through the actual agent LLM entry point", () => {
         expect(calls[0][1]).toMatchObject({
           model: "google/gemini-3.5-flash",
           reasoning: { max_tokens: 1 },
+          ...statementsFormat("survey_statement"),
         });
         expect(requestAt(1).model).toBe("google/gemini-3.1-pro-preview");
         expect(calls[1][1]).not.toHaveProperty("reasoning");
+        // Plan output is free Markdown: no structured output.
+        expect(calls[1][1]).not.toHaveProperty("response_format");
       });
   });
 });
@@ -128,6 +156,7 @@ describe.each([
 ])("HTTP, parser and independent structural acceptance (%j, mocked responses)", (setting) => {
   it.each([
     ["JSON", JSON.stringify(statements), true, true],
+    ["structured object", JSON.stringify({ statements }), true, true],
     [
       "fenced JSON",
       `\`\`\`json\n${JSON.stringify(statements)}\n\`\`\``,
@@ -149,7 +178,7 @@ describe.each([
   ])("%s", async (_name, content, parserAccepted, structurallyAccepted) => {
     vi.stubEnv("SURVEY_STATEMENTS_MODEL", setting);
     vi.mocked(axios.post).mockResolvedValue(reply(content as string));
-    const parsed = extractJsonArray(content as string);
+    const parsed = parseStatementList(content as string);
     expect(parsed !== null).toBe(parserAccepted);
     expect(structureAccepts(parsed)).toBe(structurallyAccepted);
     const result = generateSurveyStatements(inputs[0]);
@@ -166,5 +195,41 @@ describe.each([
       "Survey statement generation failed",
     );
     expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("structured statements parsing", () => {
+  it("reads the strict { statements } object and the legacy bare array alike", () => {
+    expect(parseStatementList(JSON.stringify({ statements }))).toEqual(
+      statements,
+    );
+    expect(parseStatementList(JSON.stringify(statements))).toEqual(statements);
+  });
+
+  it("falls back to the lenient parser for unstructured text", () => {
+    const fenced = `\`\`\`json\n${JSON.stringify(statements)}\n\`\`\``;
+    expect(parseStatementList(fenced)).toEqual(extractJsonArray(fenced));
+    expect(parseStatementList('{"statements":[1]}')).toEqual(
+      extractJsonArray('{"statements":[1]}'),
+    );
+  });
+
+  it("reports OpenRouter's generation metadata with the statements", async () => {
+    vi.mocked(axios.post).mockResolvedValue({
+      status: 200,
+      data: {
+        id: "gen-abc",
+        model: "google/gemini-3.5-flash-001",
+        choices: [{ message: { content: JSON.stringify({ statements }) } }],
+      },
+    });
+    await expect(generateSurveyStatementsWithMeta(inputs[0])).resolves.toEqual({
+      statements,
+      llm: {
+        model: "google/gemini-3.5-flash-001",
+        promptVersion: "2026-11-07.1",
+        generationId: "gen-abc",
+      },
+    });
   });
 });

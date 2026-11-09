@@ -4,6 +4,7 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { getUserIdFromRequest } from "@/lib/auth";
 import { toContentLanguage } from "@/lib/content-language";
+import { eventsWithoutLlmMeta } from "@/lib/llm-models";
 import { ensureEventThreadForSession } from "@/lib/server/event-threads";
 import {
   requireSessionHost,
@@ -73,7 +74,8 @@ export async function POST(
       sessionTitle: session.title,
       sessionGoal: sessionFacilitatorGoal(session),
       initialContext: sessionFacilitatorContext(session),
-      eventThreadContext: JSON.stringify(events) + existingQuestionsContext,
+      eventThreadContext:
+        JSON.stringify(eventsWithoutLlmMeta(events)) + existingQuestionsContext,
       participantCount: participantCount ?? 0,
       language: toContentLanguage(session.language),
     });
