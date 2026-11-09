@@ -35,7 +35,7 @@ describe("toPlainText", () => {
     ["encoded zero-width", "&lt;&#8203;img src=x&gt;a"],
     ["doubly encoded", "&amp;lt;&amp;#8203;img src=x&amp;gt;a"],
   ])("does not rebuild a tag from one split by a %s", (_, input) => {
-    expect(toPlainText(input)).not.toMatch(/<[a-z/]/i);
+    expect(toPlainText(input)).not.toContain("<");
   });
 
   it.each([
@@ -61,12 +61,14 @@ describe("toPlainText", () => {
 
   it("leaves nothing that parses as a tag when markup is unclosed", () => {
     expect(toPlainText("<img src=x onerror=alert(1)")).toBe(
-      "< img src=x onerror=alert(1)",
+      "＜img src=x onerror=alert(1)",
     );
   });
 
   it("keeps ordinary comparisons in plain comments", () => {
-    expect(toPlainText("a < b かつ x<y の場合")).toBe("a < b かつ x< y の場合");
+    expect(toPlainText("a < b かつ x<y の場合")).toBe(
+      "a ＜ b かつ x＜y の場合",
+    );
   });
 
   it("removes controls and invisible characters but keeps line breaks", () => {

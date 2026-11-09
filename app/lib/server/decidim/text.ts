@@ -1,6 +1,6 @@
 // Decidim API text can carry unescaped HTML, in any field and on any instance.
 // Everything read from it passes through toPlainText before it reaches a prompt
-// or the database, so what remains is text with no live markup.
+// or the database, so what remains is text with no live markup and no `<` at all.
 
 const MAX_DECODE_PASSES = 5;
 // Applied before any regex. A single field is never legitimately this long, and
@@ -15,9 +15,12 @@ const COMMENT_RE = /<!--[\s\S]*?(?:-->|$)/g;
 const BLOCK_TAG_RE =
   /<\/?(?:p|div|br|li|ul|ol|h[1-6]|tr|blockquote|pre|hr|section|article)\b[^<>]*>/gi;
 const TAG_RE = /<\/?[A-Za-z!?][^<>]*>/g;
-// `<` that still opens something after stripping (an unclosed tag, or `a<b` in a
-// plain comment). A space keeps the words and stops it parsing as a tag.
-const OPENING_RE = /<(?=[A-Za-z/!?])/g;
+// What stripping leaves behind (an unclosed tag, `a<b` in a plain comment) keeps
+// its words but loses its `<`. With none in the output, nothing downstream can
+// rebuild a tag: `<< /x>/untrusted_data>` would otherwise become a real closing
+// tag once wrapUntrusted removes the `< /x>` in the middle.
+// i18n-allow: replacement character inside third-party text, not a UI label
+const ANGLE_LOOKALIKE = "＜";
 // Controls and invisible format characters (zero-width, bidi overrides), which
 // can hide instructions from the host who reviews the imported text, and lone
 // surrogates. Removed before tags are looked for: removing them afterwards would
@@ -69,7 +72,7 @@ const stripAndDecode = (text: string, passesLeft: number): string => {
 export const toPlainText = (raw: string): string =>
   stripAndDecode(raw.slice(0, MAX_RAW_CHARS), MAX_DECODE_PASSES)
     .replace(INVISIBLE_RE, "")
-    .replace(OPENING_RE, "< ")
+    .replace(/</g, ANGLE_LOOKALIKE)
     .replace(/[ \t　]+/g, " ")
     .replace(/ ?\n ?/g, "\n")
     .replace(/\n{3,}/g, "\n\n")

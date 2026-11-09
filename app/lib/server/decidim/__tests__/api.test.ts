@@ -308,7 +308,11 @@ describe("readDecidimDiscussion", () => {
             "next",
           ),
     );
-    const clock = vi.fn().mockReturnValueOnce(0).mockReturnValue(60_000);
+    const clock = vi
+      .fn()
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValue(60_000);
 
     const result = await readDecidimDiscussion(
       post,
@@ -378,6 +382,87 @@ describe("readDecidimDiscussion", () => {
     expect(result).toMatchObject({
       discussion: { items: [{ title: "残った" }], truncated: true },
     });
+  });
+
+  it.each([
+    ["a null component", { component: null }],
+    ["a null connection", { component: { proposals: null } }],
+    ["null edges", { component: { proposals: { edges: null } } }],
+  ])("flags %s reported with errors", async (_, data) => {
+    const post = fakeInstance((query) =>
+      query.includes("Debates")
+        ? {
+            data: {
+              component: {
+                debates: {
+                  edges: [{ node: { id: "1", title: ja("残った") } }],
+                },
+              },
+            },
+          }
+        : query.includes("participatoryProcess")
+          ? SPACE
+          : { errors: [{ message: "boom" }], data },
+    );
+
+    const result = await readDecidimDiscussion(post, target(URL_P), "ja");
+
+    expect(result).toMatchObject({ discussion: { truncated: true } });
+  });
+
+  it("reports nulls that came with errors as unavailable", async () => {
+    const errored = (data: unknown) =>
+      fakeInstance(() => ({ errors: [{ message: "boom" }], data }));
+
+    expect(
+      await readDecidimDiscussion(
+        errored({ space: null }),
+        target(URL_P),
+        "ja",
+      ),
+    ).toEqual({ ok: false, reason: "unavailable" });
+    expect(
+      await readDecidimDiscussion(
+        errored({ assemblies: null }),
+        target("https://x.example/assemblies/town"),
+        "ja",
+      ),
+    ).toEqual({ ok: false, reason: "unavailable" });
+  });
+
+  it("does not spend time on a page far longer than requested", async () => {
+    const post = fakeInstance((query) =>
+      query.includes("participatoryProcess")
+        ? SPACE
+        : proposalsPage(
+            Array.from({ length: 200_000 }, () => ({ title: "a" })),
+          ),
+    );
+    const start = Date.now();
+
+    const result = await readDecidimDiscussion(
+      post,
+      target(`${URL_P}/f/2/proposals`),
+      "ja",
+    );
+
+    expect(Date.now() - start).toBeLessThan(2000);
+    expect(result).toMatchObject({ discussion: { items: { length: 25 } } });
+  });
+
+  it("stops schema retries when the time budget runs out", async () => {
+    const post = fakeInstance(() => ({
+      errors: [{ message: "Field 'voteCount' doesn't exist on type 'X'" }],
+    }));
+    const clock = vi
+      .fn()
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValue(60_000);
+
+    await readDecidimDiscussion(post, target(URL_P), "ja", clock);
+
+    expect(post.queries).toHaveLength(1);
   });
 
   it("reports a failed single resource as unavailable, not empty", async () => {

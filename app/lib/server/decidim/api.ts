@@ -16,6 +16,8 @@ const MAX_COMPONENTS = 6;
 const MAX_SCHEMA_RETRIES = 6;
 const READ_BUDGET_MS = 40_000;
 
+// A hostile instance can fill the 5 MB response cap with empty entries.
+const MAX_COMMENTS_PER_LEVEL = 200;
 const MAX_TITLE_CHARS = 300;
 const MAX_DESCRIPTION_CHARS = 3000;
 const MAX_ITEM_BODY_CHARS = 1000;
@@ -81,7 +83,13 @@ type Schema = Readonly<{
 }>;
 
 type QueryResult =
-  | Readonly<{ ok: true; data: Record<string, unknown>; schema: Schema }>
+  | Readonly<{
+      ok: true;
+      data: Record<string, unknown>;
+      // The instance reported errors, so what `data` lacks may exist.
+      partial: boolean;
+      schema: Schema;
+    }>
   | Readonly<{ ok: false; reason: DecidimFailure; schema: Schema }>;
 
 type Json = Record<string, unknown>;
@@ -214,7 +222,7 @@ const query = async (
   // Errors on individual fields leave the rest of `data` usable.
   const data = asJson(body.data);
   return data
-    ? { ok: true, data, schema }
+    ? { ok: true, data, partial: messages.length > 0, schema }
     : {
         ok: false,
         reason: messages.length > 0 ? "unsupported" : "unavailable",
@@ -245,23 +253,25 @@ const decodeComments = (
   value: unknown,
   depthLeft: number = 1,
 ): readonly DecidimComment[] =>
-  asArray(value).flatMap((entry) => {
-    const json = asJson(entry);
-    if (!json) return [];
-    const text = typeof json.body === "string" ? toPlainText(json.body) : "";
-    const replies =
-      depthLeft > 0 ? decodeComments(json.comments, depthLeft - 1) : [];
-    return text.length > 0
-      ? [
-          {
-            text,
-            alignment: asNumber(json.alignment),
-            upVotes: asNumber(json.upVotes),
-          },
-          ...replies,
-        ]
-      : replies;
-  });
+  asArray(value)
+    .slice(0, MAX_COMMENTS_PER_LEVEL)
+    .flatMap((entry) => {
+      const json = asJson(entry);
+      if (!json) return [];
+      const text = typeof json.body === "string" ? toPlainText(json.body) : "";
+      const replies =
+        depthLeft > 0 ? decodeComments(json.comments, depthLeft - 1) : [];
+      return text.length > 0
+        ? [
+            {
+              text,
+              alignment: asNumber(json.alignment),
+              upVotes: asNumber(json.upVotes),
+            },
+            ...replies,
+          ]
+        : replies;
+    });
 
 const decodeItem = (
   kind: DecidimItem["kind"],
@@ -362,7 +372,7 @@ const readSpace = async (
     )?.id,
   );
   return id === ""
-    ? { ok: false, reason: "notFound", schema }
+    ? { ok: false, reason: list.partial ? "unavailable" : "notFound", schema }
     : query(
         post,
         target.origin,
@@ -404,9 +414,11 @@ const readComponentPages = async (
   }
   const connection = asJson(asJson(result.data.component)?.[collection]);
   const pageInfo = asJson(connection?.pageInfo);
-  const edges = asArray(connection?.edges);
-  // A field error nulls out its edge and leaves the rest of the page usable.
-  const lostEdge = edges.some((edge) => !asJson(asJson(edge)?.node));
+  // We ask for PAGE_SIZE; a longer page is not something to spend time on.
+  const edges = asArray(connection?.edges).slice(0, PAGE_SIZE);
+  // A field error nulls out its edge, or more, and leaves the rest usable.
+  const lostEdge =
+    result.partial || edges.some((edge) => !asJson(asJson(edge)?.node));
   const items = edges.flatMap((edge) =>
     decodeItem(
       collection === "proposals" ? "proposal" : "debate",
@@ -485,7 +497,7 @@ const readResource = async (
     : undefined;
   return {
     items: decodeItem(resource.kind, node, reader.language),
-    more: !result.ok,
+    more: !result.ok || result.partial,
     schema: result.schema,
   };
 };
@@ -510,13 +522,16 @@ export const readDecidimDiscussion = async (
   now: () => number = Date.now,
 ): Promise<DecidimReadResult> => {
   const deadline = now() + READ_BUDGET_MS;
-  const space = await readSpace(post, target, INITIAL_SCHEMA);
+  // Schema retries count too, or an instance could keep rejecting fields.
+  const budgeted: DecidimPost = (origin, query) =>
+    now() > deadline ? Promise.resolve({ ok: false }) : post(origin, query);
+  const space = await readSpace(budgeted, target, INITIAL_SCHEMA);
   if (!space.ok) {
     return { ok: false, reason: space.reason };
   }
   const spaceJson = asJson(space.data.space);
   if (!spaceJson) {
-    return { ok: false, reason: "notFound" };
+    return { ok: false, reason: space.partial ? "unavailable" : "notFound" };
   }
   // The URL names a component of this space, so one from elsewhere on the
   // instance is a wrong URL rather than something to read.
@@ -525,7 +540,7 @@ export const readDecidimDiscussion = async (
       target.componentId === undefined || component.id === target.componentId,
   );
   const reader: Reader = {
-    post,
+    post: budgeted,
     origin: target.origin,
     language,
     isOverBudget: () => now() > deadline,
