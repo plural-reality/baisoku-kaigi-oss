@@ -1,0 +1,1109 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>賛否文セットの人手評価</title>
+<style nonce="__NONCE__">
+:root {
+  --fg: #1a1a1a; --muted: #5f6368; --line: #dcdcdc; --bg: #f6f6f4; --card: #fff;
+  --pass: #1e7b34; --pass-bg: #e6f4ea; --fail: #b3261e; --fail-bg: #fce8e6;
+  --hold: #8a5a00; --hold-bg: #fef3d6; --focus: #1a56c4; --focus-bg: #e8f0fe; --shared: #8a8f98;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.55 "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+header { position: sticky; top: 0; z-index: 20; background: var(--card); border-bottom: 1px solid var(--line); padding: 6px 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+header h1 { font-size: 14px; margin: 0; }
+.progress { font-weight: 600; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+button { font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--card); border-radius: 4px; padding: 2px 9px; color: var(--fg); }
+button:disabled { cursor: not-allowed; opacity: .45; }
+button[aria-pressed="true"] { background: var(--focus); color: #fff; border-color: var(--focus); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.mode { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.mode button { border: 0; border-radius: 0; padding: 3px 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
+.chip { min-width: 28px; padding: 0 6px; font-size: 12px; }
+.chip.done { background: var(--pass-bg); border-color: var(--pass); }
+.chip.current { outline: 2px solid var(--focus); }
+html { scroll-padding-top: calc(var(--header-h, 80px) + 8px); scroll-padding-bottom: calc(var(--footer-h, 100px) + 8px); }
+main { max-width: 1500px; margin: 0 auto; padding: 10px 16px calc(var(--footer-h, 100px) + 24px); }
+section.card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; }
+h2 { font-size: 15px; margin: 0 0 4px; }
+h3 { font-size: 13px; margin: 0 0 4px; }
+dl.input { display: grid; grid-template-columns: 8em 1fr; gap: 2px 12px; margin: 4px 0 0; }
+dl.input dt { color: var(--muted); }
+dl.input dd { margin: 0; white-space: pre-wrap; }
+.tag { display: inline-block; font-size: 11px; border: 1px solid var(--line); border-radius: 10px; padding: 0 7px; margin-right: 4px; }
+.focus-card { background: var(--hold-bg); border-color: var(--hold); display: grid; grid-template-columns: 3fr 2fr; gap: 12px; }
+@media (max-width: 1000px) { .focus-card { grid-template-columns: 1fr; } }
+.focus-card ul { margin: 2px 0 0; padding-left: 1.2em; }
+.example { font-size: 13px; margin: 0 0 4px; }
+.example b { font-weight: 600; }
+.kind { font-size: 11px; border-radius: 3px; padding: 0 5px; white-space: nowrap; }
+.kind.required { background: var(--focus-bg); color: var(--focus); }
+.kind.forbidden { background: var(--fail-bg); color: var(--fail); }
+.fine { font-size: 12px; }
+.fine table { width: 100%; border-collapse: collapse; }
+.fine td { border-top: 1px solid #eee; padding: 2px 4px; vertical-align: top; }
+.fine input { width: 100%; font: inherit; font-size: 12px; }
+table.criteria { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.criteria th, table.criteria td { border-top: 1px solid var(--line); padding: 3px 6px; text-align: left; vertical-align: top; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.grid .head { position: sticky; top: var(--header-h, 80px); z-index: 5; background: var(--card); border-bottom: 1px solid var(--line); padding: 4px 6px; }
+.text { flex: 1; }
+.cell { display: flex; gap: 6px; align-items: flex-start; padding: 3px 6px; border-bottom: 1px solid #eee; background: var(--card); cursor: pointer; min-height: 30px; }
+.cell:hover { background: #fafafa; }
+.cell.cursor { box-shadow: inset 3px 0 0 var(--focus); background: var(--focus-bg); }
+.cell.flagged { background: var(--fail-bg); }
+.cell.shared .text { color: var(--shared); }
+.cell.empty { cursor: default; }
+.num { flex: none; width: 34px; font-size: 12px; padding: 0 2px; font-variant-numeric: tabular-nums; }
+.flag-label { display: inline-block; font-size: 11px; background: var(--fail); color: #fff; border-radius: 3px; padding: 0 5px; margin: 0 3px 0 0; }
+.shared-tag { display: inline-block; font-size: 11px; color: var(--shared); border: 1px solid #d0d3d8; border-radius: 3px; padding: 0 4px; margin-left: 4px; }
+.chooser { margin-top: 4px; padding: 6px; border: 1px solid var(--fail); border-radius: 4px; background: #fff; cursor: default; }
+.chooser .opts { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.chooser .opts button[aria-pressed="true"] { background: var(--fail); border-color: var(--fail); }
+.chooser input { width: 100%; font: inherit; font-size: 12px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 3px; }
+.badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.badge { font-size: 11px; border-radius: 3px; padding: 0 6px; border: 1px solid var(--line); }
+.badge.ok { color: var(--pass); border-color: var(--pass); }
+.badge.ng { color: var(--fail); border-color: var(--fail); }
+.badge.error { background: var(--fail); color: #fff; border-color: var(--fail); font-weight: 600; }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; margin-top: 10px; }
+.setq { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 0; border-top: 1px dotted var(--line); font-size: 13px; }
+.setq .rule { flex: 1 1 60%; }
+.setq button.met[aria-pressed="true"] { background: var(--pass); border-color: var(--pass); }
+.setq button.notmet[aria-pressed="true"] { background: var(--fail); border-color: var(--fail); }
+.setq input { flex: 1 1 100%; font: inherit; font-size: 12px; padding: 2px 6px; border: 1px solid var(--fail); border-radius: 3px; }
+.confirm { margin-top: 6px; display: flex; gap: 8px; align-items: center; }
+.confirm button.on { background: var(--pass); color: #fff; border-color: var(--pass); }
+.state-pill { font-size: 12px; font-weight: 600; }
+.state-pill.done { color: var(--pass); }
+.state-pill.todo { color: var(--hold); }
+.v-pass { color: var(--pass); } .v-fail { color: var(--fail); } .v-unrated { color: var(--hold); }
+textarea { width: 100%; min-height: 48px; font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 3px; }
+pre.raw { white-space: pre-wrap; word-break: break-all; background: var(--bg); border: 1px solid var(--line); padding: 6px; font-size: 12px; max-height: 260px; overflow: auto; }
+details > summary { cursor: pointer; color: var(--muted); }
+.notice { background: var(--hold-bg); border: 1px solid var(--hold); border-radius: 4px; padding: 4px 8px; font-size: 13px; margin: 6px 0; }
+.locked-banner { background: var(--fail-bg); border: 1px solid var(--fail); color: var(--fail); border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; font-weight: 600; }
+footer { position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; background: var(--card); border-top: 2px solid var(--line); padding: 6px 16px; display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: center; }
+footer .q { font-weight: 600; }
+footer .row1 { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+footer .reasons button { font-size: 12px; padding: 0 7px; border-radius: 12px; }
+footer input.reason { font: inherit; font-size: 12px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 3px; width: 16em; }
+footer .reminder { font-size: 12px; color: var(--hold); }
+footer .go { font-weight: 600; padding: 6px 14px; background: var(--fg); color: #fff; border-color: var(--fg); }
+.status-ok { color: var(--pass); }
+.status-ng { color: var(--fail); font-weight: 600; }
+table.summary { border-collapse: collapse; font-size: 13px; }
+table.summary th, table.summary td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
+.done-mark { color: var(--pass); font-weight: 600; }
+.hidden { display: none; }
+.setq button.hold[aria-pressed="true"] { background: var(--hold); border-color: var(--hold); }
+.held { font-size: 12px; margin-top: 4px; color: var(--hold); }
+.held-item { display: inline-block; margin-right: 8px; }
+@media (max-width: 900px) {
+  header { gap: 6px; padding: 4px 8px; }
+  header h1 { display: none; }
+  main { padding-left: 8px; padding-right: 8px; }
+  .grid { grid-template-columns: 1fr; }
+  .grid > .head.a { order: 0; }
+  .grid > .col-a { order: 1; }
+  .grid > .head.b { order: 2; }
+  .grid > .col-b { order: 3; }
+  .grid > .cell.empty { display: none; }
+  .focus-card { grid-template-columns: 1fr; }
+  dl.input { grid-template-columns: 6em 1fr; }
+  footer { grid-template-columns: 1fr; padding: 4px 8px; }
+  footer .reminder, footer .reasons { display: none; }
+  footer input.reason { width: 100%; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>賛否文セットの人手評価</h1>
+  <span class="mode" role="group" aria-label="評価の細かさ">
+    <button type="button" id="mode-quick" title="どちらが良いかだけ選ぶ（1ケース約20秒）">かんたん（どちらが良いかだけ）</button>
+    <button type="button" id="mode-full" title="問題のある文を指摘し、出力を確認する">しっかり（問題の文を指摘）</button>
+  </span>
+  <span id="progress" class="progress"></span>
+  <span id="completed" class="muted"></span>
+  <span id="eta" class="muted small"></span>
+  <button type="button" id="prev" title="前のケース (←)">←</button>
+  <button type="button" id="next" title="次のケース (→)">→</button>
+  <label class="small"><input type="checkbox" id="filter"> 未完了のみ</label>
+  <button type="button" id="blind-button" title="モデル名は伏せたまま、左右・ケース別の好みを見る（ロックしない）">好みの集計だけ見る</button>
+  <button type="button" id="summary-button" title="全ケース完了後に表示できます。開くとモデル名が表示され、判定はロックされます">集計（モデル名を表示）</button>
+  <span id="judge" class="muted small"></span>
+</header>
+<nav id="chips" class="chips" aria-label="ケース一覧"></nav>
+<main id="main"><p class="muted">読み込み中…</p></main>
+<footer id="bar"></footer>
+<script nonce="__NONCE__">
+"use strict";
+(() => {
+  const app = {
+    judgeId: "", runKey: "", cases: [], index: 0, filter: false,
+    mode: "full", work: {}, prefs: {}, view: "case", timers: {}, locked: false, lockedMessage: "",
+    cursor: { slot: "A", n: 1 }, chooser: null, pendingCite: null, digitBuffer: "", digitTimer: null,
+    // per save key (`${caseId}:${slot|pref}`): server updatedAt the next PUT is
+    // based on, the save queue, conflicting local versions and notices
+    base: {}, chains: {}, conflicts: {}, notices: {},
+    // per case: request sequence and the newest response applied
+    seq: {}, applied: {}, draftCounter: 0, visit: null,
+  };
+  const REASON_TAGS = ["論点が広い", "表現が中立", "重複が少ない", "具体的"];
+
+  // ---- DOM helpers: strings always become text nodes (never innerHTML) ----
+  const el = (tag, attrs, ...children) => {
+    const node = document.createElement(tag);
+    if (tag === "button") node.type = "button";
+    Object.entries(attrs || {}).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === false) return;
+      if (key === "class") node.className = value;
+      else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+      else node.setAttribute(key, value === true ? "" : String(value));
+    });
+    children.flat(Infinity).forEach((child) => {
+      if (child === null || child === undefined || child === false) return;
+      node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+    });
+    return node;
+  };
+  const $ = (id) => document.getElementById(id);
+  // replaceChildren with the same null/false skipping and text-node rule as el().
+  const fill = (node, ...children) =>
+    node.replaceChildren(
+      ...children.flat(Infinity).filter((c) => c !== null && c !== undefined && c !== false)
+        .map((c) => (c instanceof Node ? c : document.createTextNode(String(c)))),
+    );
+  const api = async (method, path, body) => {
+    const response = await fetch(path, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(data.message || (data.errors || [data.error || response.status]).join(", "));
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+    return data;
+  };
+
+  // ---- per-browser settings ----
+  const storeKey = (name) => `evalReview2:${app.runKey}:${app.judgeId}:${name}`;
+  const readStore = (name, fallback) => {
+    try { const v = JSON.parse(localStorage.getItem(storeKey(name)) || "null"); return v === null ? fallback : v; } catch { return fallback; }
+  };
+  const writeStore = (name, value) => localStorage.setItem(storeKey(name), JSON.stringify(value));
+
+  // ---- drafts: nothing typed is lost on reload, even if not yet saved ----
+  const keyOf = (caseId, kind) => `${caseId}:${kind}`;
+  const readDraft = (caseId, kind) => readStore(`draft:${caseId}:${kind}`, null);
+  const writeDraft = (caseId, kind, value) => {
+    app.draftCounter += 1;
+    const draftId = `${Date.now()}-${app.draftCounter}`;
+    writeStore(`draft:${caseId}:${kind}`, { ...value, draftId, savedAt: new Date().toISOString() });
+    return draftId;
+  };
+  const clearDraftIf = (caseId, kind, draftId) => {
+    const draft = readDraft(caseId, kind);
+    if (draft && draft.draftId === draftId) localStorage.removeItem(storeKey(`draft:${caseId}:${kind}`));
+  };
+  const clearDraft = (caseId, kind) => localStorage.removeItem(storeKey(`draft:${caseId}:${kind}`));
+  const copy = (value) => JSON.parse(JSON.stringify(value));
+  // Key-sorted JSON, to compare a draft with the server copy.
+  const canonical = (value) =>
+    Array.isArray(value) ? `[${value.map(canonical).join(",")}]`
+      : value && typeof value === "object"
+        ? `{${Object.keys(value).filter((k) => k !== "draftId" && k !== "savedAt").sort().map((k) => `${JSON.stringify(k)}:${canonical(value[k])}`).join(",")}}`
+        : JSON.stringify(value);
+
+  const emptyReview = () => ({ flags: [], set: {}, confirmed: false, overrides: {} });
+  const serverWork = (item, slot) => {
+    const judgment = item.outputs.find((o) => o.slot === slot)?.judgment;
+    return judgment
+      ? { review: copy(judgment.review || emptyReview()), note: judgment.note || "" }
+      : { review: emptyReview(), note: "" };
+  };
+  const serverPref = (item) => ({ winner: item.preference.winner, reason: item.preference.reason || "", reasonTags: [...(item.preference.reasonTags || [])] });
+  const updatedAtIn = (item, kind) =>
+    kind === "pref" ? item.preference.updatedAt : (item.outputs.find((o) => o.slot === kind)?.judgment?.updatedAt ?? null);
+
+  const initWork = (item) => {
+    app.work[item.caseId] = {};
+    [...item.outputs.map((o) => o.slot), "pref"].forEach((kind) => {
+      const key = keyOf(item.caseId, kind);
+      const serverAt = updatedAtIn(item, kind);
+      const draft = readDraft(item.caseId, kind);
+      const shapeOk = draft && (kind === "pref" ? "winner" in draft : draft.review && Array.isArray(draft.review.flags));
+      const fromServer = kind === "pref" ? serverPref(item) : serverWork(item, kind);
+      const same = shapeOk && canonical(draft) === canonical(fromServer);
+      if (same) clearDraft(item.caseId, kind);
+      const restored = shapeOk && !same && (!serverAt || draft.savedAt > serverAt);
+      const work = restored ? (({ draftId, savedAt, ...rest }) => rest)(copy(draft)) : fromServer;
+      if (kind === "pref") app.prefs[item.caseId] = work;
+      else app.work[item.caseId][kind] = work;
+      app.base[key] = serverAt;
+      if (restored) app.notices[key] = "未保存の下書きを復元しました";
+      const stored = readDraft(item.caseId, `${kind}:conflict`);
+      if (shapeOk && !same && !restored) {
+        app.conflicts[key] = copy(draft);
+        app.notices[key] = "保存済みの判定より古い未保存の変更があります";
+        clearDraft(item.caseId, kind);
+        writeDraft(item.caseId, `${kind}:conflict`, draft);
+      } else if (stored) {
+        app.conflicts[key] = copy(stored);
+        app.notices[key] = "別のタブで更新されたため保留した変更があります";
+      }
+    });
+  };
+
+  const current = () => app.cases[app.index];
+  const outputOf = (item, slot) => item.outputs.find((o) => o.slot === slot);
+  const statementCriteria = (item) => item.criteriaView.filter((c) => c.scope === "statement");
+  const setCriteria = (item) => item.criteriaView.filter((c) => c.scope === "set");
+  const caseRules = (item) => item.criteriaView.filter((c) => c.caseSpecific);
+  const isComplete = (item) => (app.mode === "quick" ? item.completeQuick : item.complete);
+  const flagOf = (review, n) => review.flags.find((f) => f.statement === n);
+
+  // ---- saving ----
+  const setStatus = (text, ok) => {
+    const node = $("save-status");
+    if (!node) return;
+    node.textContent = text;
+    node.className = ok ? "status-ok small" : "status-ng small";
+  };
+  const replaceCase = (updated) => {
+    const index = app.cases.findIndex((c) => c.caseId === updated.caseId);
+    if (index >= 0) app.cases[index] = updated;
+  };
+  const nextSeq = (caseId) => {
+    app.seq[caseId] = (app.seq[caseId] || 0) + 1;
+    return app.seq[caseId];
+  };
+  // Responses can arrive out of order; only the newest request's view of a case
+  // updates its completion badge.
+  const applyCase = (updated, seq, force) => {
+    if (!updated) return;
+    if (!force && seq < (app.applied[updated.caseId] || 0)) return;
+    app.applied[updated.caseId] = Math.max(seq, app.applied[updated.caseId] || 0);
+    const wasComplete = isComplete(app.cases.find((c) => c.caseId === updated.caseId) || updated);
+    replaceCase(updated);
+    if (!wasComplete && isComplete(updated)) recordDuration(updated.caseId);
+  };
+  const workOf = (caseId, kind) => (kind === "pref" ? app.prefs[caseId] : app.work[caseId][kind]);
+  const requestFor = (caseId, kind) => {
+    const work = workOf(caseId, kind);
+    const baseUpdatedAt = app.base[keyOf(caseId, kind)] ?? null;
+    return kind === "pref"
+      ? { path: "/api/preference", body: { caseId, winner: work.winner, reason: work.reason, reasonTags: work.reasonTags || [], baseUpdatedAt } }
+      : { path: "/api/judgment", body: { caseId, slot: kind, review: work.review, note: work.note, baseUpdatedAt } };
+  };
+  const overrideErrors = (review) =>
+    Object.entries(review.overrides)
+      .filter(([, o]) => o.verdict !== "unrated" && o.evidence.trim() === "")
+      .map(([id]) => `${id} の根拠が空です`);
+  const readyToSend = (caseId, kind) => {
+    const work = workOf(caseId, kind);
+    return kind === "pref" ? Boolean(work.winner) : overrideErrors(work.review).length === 0;
+  };
+  const showLocked = (message) => {
+    app.locked = true;
+    app.lockedMessage = message || app.lockedMessage;
+    setStatus(app.lockedMessage, false);
+    if (app.view === "case") renderCase();
+  };
+  const handleConflict = (caseId, kind, data, seq) => {
+    const key = keyOf(caseId, kind);
+    const local = copy(workOf(caseId, kind));
+    app.conflicts[key] = local;
+    writeDraft(caseId, `${kind}:conflict`, local);
+    clearDraft(caseId, kind);
+    applyCase(data.case, seq, true);
+    app.base[key] = updatedAtIn(data.case, kind);
+    if (kind === "pref") app.prefs[caseId] = serverPref(data.case);
+    else app.work[caseId][kind] = serverWork(data.case, kind);
+    app.notices[key] = data.message;
+    setStatus(data.message, false);
+    if (app.view === "case" && current().caseId === caseId) renderCase();
+  };
+  const sendSave = async (caseId, kind) => {
+    const key = keyOf(caseId, kind);
+    const work = workOf(caseId, kind);
+    const draftId = writeDraft(caseId, kind, work);
+    if (app.locked) {
+      setStatus(app.lockedMessage, false);
+      return false;
+    }
+    if (!readyToSend(caseId, kind)) {
+      if (kind === "pref") return true;
+      setStatus(`出力${kind}は未保存（${overrideErrors(work.review)[0]}）`, false);
+      return false;
+    }
+    // Unchanged from what the server holds (or nothing entered yet): no PUT, so
+    // opening and leaving a case never rewrites a stored judgment or preference.
+    const item = app.cases.find((c) => c.caseId === caseId);
+    const serverCopy = kind === "pref" ? serverPref(item) : serverWork(item, kind);
+    if (canonical(work) === canonical(serverCopy)) {
+      clearDraftIf(caseId, kind, draftId);
+      return true;
+    }
+    const seq = nextSeq(caseId);
+    const { path, body } = requestFor(caseId, kind);
+    try {
+      const updated = await api("PUT", path, body);
+      app.base[key] = updatedAtIn(updated, kind);
+      clearDraftIf(caseId, kind, draftId);
+      if (app.notices[key] === "未保存の下書きを復元しました") delete app.notices[key];
+      applyCase(updated, seq, false);
+      setStatus(`保存しました ${new Date().toLocaleTimeString("ja-JP")}`, true);
+      renderChrome();
+      if (app.view === "case" && current().caseId === caseId) refreshPanels();
+      return true;
+    } catch (error) {
+      if (error.data?.error === "locked") showLocked(error.data.message);
+      else if (error.data?.error === "conflict") handleConflict(caseId, kind, error.data, seq);
+      else setStatus(`保存に失敗しました（${error.message}）。下書きはこのブラウザに残っています`, false);
+      return false;
+    }
+  };
+  // One save at a time per key, so each PUT is based on the previous answer.
+  const persist = (caseId, kind) => {
+    const key = keyOf(caseId, kind);
+    const run = () => sendSave(caseId, kind);
+    app.chains[key] = (app.chains[key] || Promise.resolve()).then(run, run);
+    return app.chains[key];
+  };
+  const reapply = (caseId, kind) => {
+    const key = keyOf(caseId, kind);
+    const local = app.conflicts[key];
+    if (!local) return;
+    const { draftId, savedAt, ...rest } = local;
+    if (kind === "pref") app.prefs[caseId] = rest;
+    else app.work[caseId][kind] = rest;
+    delete app.conflicts[key];
+    delete app.notices[key];
+    clearDraft(caseId, `${kind}:conflict`);
+    renderCase();
+    persist(caseId, kind);
+  };
+  const debounce = (key, fn) => {
+    clearTimeout(app.timers[key]);
+    app.timers[key] = setTimeout(() => {
+      delete app.timers[key];
+      fn();
+    }, 500);
+  };
+  const flushCase = async (item) => {
+    Object.keys(app.timers).forEach((key) => {
+      clearTimeout(app.timers[key]);
+      delete app.timers[key];
+    });
+    const results = await Promise.all([
+      ...item.outputs.filter((o) => o.judgeable).map((o) => persist(item.caseId, o.slot)),
+      persist(item.caseId, "pref"),
+    ]);
+    return results.every(Boolean);
+  };
+  // Leaving the page with a debounced save pending: send it with keepalive so
+  // the browser finishes it after unload. The localStorage draft stays as backup.
+  const flushOnLeave = () => {
+    leaveCase();
+    Object.keys(app.timers).forEach((key) => {
+      clearTimeout(app.timers[key]);
+      delete app.timers[key];
+      const cut = key.lastIndexOf(":");
+      const caseId = key.slice(0, cut);
+      const kind = key.slice(cut + 1);
+      if (app.locked || !readyToSend(caseId, kind)) return;
+      const { path, body } = requestFor(caseId, kind);
+      fetch(path, { method: "PUT", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    });
+  };
+  window.addEventListener("pagehide", flushOnLeave);
+  // The sticky header and footer change height as they wrap; keep the scroll
+  // padding and the sticky column headers in step so nothing hides beneath them.
+  const trackHeight = (node, name) => {
+    const set = () => document.documentElement.style.setProperty(name, `${Math.ceil(node.getBoundingClientRect().height)}px`);
+    new ResizeObserver(set).observe(node);
+    set();
+  };
+  trackHeight(document.querySelector("header"), "--header-h");
+  trackHeight($("bar"), "--footer-h");
+  window.addEventListener("beforeunload", flushOnLeave);
+
+  // ---- time per case (this browser): median of completed cases → estimate ----
+  const enterCase = () => { app.visit = { caseId: current()?.caseId, start: Date.now() }; };
+  const leaveCase = () => {
+    if (!app.visit?.caseId) return;
+    const spent = readStore("spent", {});
+    spent[app.visit.caseId] = (spent[app.visit.caseId] || 0) + (Date.now() - app.visit.start);
+    writeStore("spent", spent);
+    app.visit = { caseId: app.visit.caseId, start: Date.now() };
+  };
+  const recordDuration = (caseId) => {
+    leaveCase();
+    const durations = readStore(`durations:${app.mode}`, {});
+    if (durations[caseId]) return;
+    durations[caseId] = readStore("spent", {})[caseId] || 0;
+    writeStore(`durations:${app.mode}`, durations);
+  };
+  const etaText = () => {
+    const values = Object.values(readStore(`durations:${app.mode}`, {})).filter((v) => v > 0).sort((a, b) => a - b);
+    const left = app.cases.filter((c) => !isComplete(c)).length;
+    if (left === 0) return "残り 0 件";
+    if (values.length === 0) return "残り時間: 1件終えると表示";
+    const median = values[Math.floor(values.length / 2)];
+    return `残り約 ${Math.max(1, Math.round((median * left) / 60000))} 分（1件 中央値 ${Math.round(median / 1000)} 秒）`;
+  };
+
+  // ---- actions ----
+  const touch = (caseId, slot, change, delay) => {
+    if (app.locked) return;
+    const work = app.work[caseId][slot];
+    change(work);
+    writeDraft(caseId, slot, work);
+    if (delay) debounce(keyOf(caseId, slot), () => persist(caseId, slot));
+    else persist(caseId, slot);
+  };
+  const toggleChip = (slot, n, criterionId) => {
+    const item = current();
+    touch(item.caseId, slot, (work) => {
+      const flag = flagOf(work.review, n);
+      const criteria = flag ? flag.criteria : [];
+      const next = criteria.includes(criterionId) ? criteria.filter((id) => id !== criterionId) : [...criteria, criterionId];
+      const others = work.review.flags.filter((f) => f.statement !== n);
+      work.review.flags = next.length === 0 ? others : [...others, { statement: n, criteria: next, comment: flag?.comment || "" }].sort((a, b) => a.statement - b.statement);
+    });
+    renderCase();
+  };
+  const removeFlag = (slot, n) => {
+    const item = current();
+    touch(item.caseId, slot, (work) => { work.review.flags = work.review.flags.filter((f) => f.statement !== n); });
+    app.chooser = null;
+    renderCase();
+  };
+  const openChooser = (slot, n) => {
+    if (app.locked) return;
+    const item = current();
+    const output = outputOf(item, slot);
+    if (!output?.judgeable || !output.statements || n < 1 || n > output.statements.length) return;
+    app.cursor = { slot, n };
+    app.chooser = app.chooser && app.chooser.slot === slot && app.chooser.n === n ? null : { slot, n };
+    renderCase();
+  };
+  // A click on a statement cites it in a 満たさない reason only when that
+  // reason field had focus at mousedown (pendingCite, set by the cell). The
+  // click consumes it; the field is not re-focused, so the next click opens the
+  // flag chooser as usual.
+  const clickStatement = (slot, n) => {
+    const cite = app.pendingCite;
+    app.pendingCite = null;
+    if (cite && cite.slot === slot) {
+      const item = current();
+      touch(item.caseId, slot, (work) => {
+        const answer = work.review.set[cite.criterionId] || { met: false, reason: "" };
+        const reason = answer.reason.trim();
+        work.review.set[cite.criterionId] = { met: false, reason: reason ? `${reason} #${n}` : `#${n}` };
+      }, true);
+      renderCase();
+      setStatus(`理由に #${n} を追加しました`, true);
+      return;
+    }
+    openChooser(slot, n);
+  };
+  // 満たす / 満たさない / 保留 for a whole-batch criterion. 保留 is an explicit
+  // hold (override unrated) that confirm keeps; 満たす returns to the default.
+  const setAnswer = (slot, criterionId, met) => {
+    const item = current();
+    const count = outputOf(item, slot)?.statements?.length ?? null;
+    touch(item.caseId, slot, (work) => {
+      delete work.review.overrides[criterionId];
+      if (met === "hold") {
+        delete work.review.set[criterionId];
+        work.review.overrides[criterionId] = { verdict: "unrated", evidence: "判断保留" };
+      } else if (met) delete work.review.set[criterionId];
+      else work.review.set[criterionId] = { met: false, reason: work.review.set[criterionId]?.reason || "" };
+    });
+    app.pendingCite = null;
+    renderCase();
+    if (count === null) return;
+    if (!met) {
+      const input = document.querySelector(`input[data-reason="${slot}:${criterionId}"]`);
+      if (input) input.focus();
+    }
+  };
+  const setConfirmed = (slot, value) => {
+    const item = current();
+    const output = outputOf(item, slot);
+    if (!output?.judgeable) return;
+    touch(item.caseId, slot, (work) => { work.review.confirmed = value; });
+    renderCase();
+  };
+  const releaseHold = (slot, criterionId) => {
+    const item = current();
+    touch(item.caseId, slot, (work) => { delete work.review.overrides[criterionId]; });
+    renderCase();
+  };
+  const setOverride = (slot, criterionId, verdict) => {
+    const item = current();
+    const criterion = item.criteriaView.find((c) => c.id === criterionId);
+    const count = outputOf(item, slot)?.statements?.length;
+    const scope = count ? `${count}文` : "全文";
+    touch(item.caseId, slot, (work) => {
+      const old = work.review.overrides[criterionId];
+      const evidence = old?.evidence ||
+        (verdict === "pass" ? (criterion.kind === "forbidden" ? `${scope}を確認し該当なし` : `${scope}を確認し満たす`)
+          : verdict === "unrated" ? "判断保留" : "");
+      work.review.overrides[criterionId] = { verdict, evidence };
+    });
+    renderCase();
+  };
+  const setPreference = (winner) => {
+    if (app.locked) return;
+    const item = current();
+    if (!item.needsPreference) return;
+    app.prefs[item.caseId].winner = winner;
+    writeDraft(item.caseId, "pref", app.prefs[item.caseId]);
+    renderBar();
+    persist(item.caseId, "pref");
+  };
+  const toggleReasonTag = (tag) => {
+    if (app.locked) return;
+    const item = current();
+    const pref = app.prefs[item.caseId];
+    pref.reasonTags = (pref.reasonTags || []).includes(tag) ? pref.reasonTags.filter((t) => t !== tag) : [...(pref.reasonTags || []), tag];
+    writeDraft(item.caseId, "pref", pref);
+    renderBar();
+    persist(item.caseId, "pref");
+  };
+  const visibleIndexes = () =>
+    app.cases.map((_c, i) => i).filter((i) => !app.filter || !isComplete(app.cases[i]) || i === app.index);
+  const go = async (index) => {
+    if (index < 0 || index >= app.cases.length || index === app.index) return;
+    leaveCase();
+    flushCase(current());
+    app.index = index;
+    app.view = "case";
+    app.chooser = null;
+    app.pendingCite = null;
+    app.cursor = { slot: "A", n: 1 };
+    location.hash = `#${current().caseId}`;
+    enterCase();
+    render();
+    window.scrollTo(0, 0);
+  };
+  const step = (delta) => {
+    const indexes = visibleIndexes();
+    const target = indexes[indexes.indexOf(app.index) + delta];
+    if (target !== undefined) go(target);
+  };
+  // しっかり: confirm every judgeable output (unflagged criteria → 合格), then
+  // save. Both modes need the preference before moving on.
+  const confirmAndNext = async () => {
+    if (app.locked) { step(1); return; }
+    const item = current();
+    if (app.mode === "full") {
+      item.outputs.filter((o) => o.judgeable).forEach((o) => {
+        const work = app.work[item.caseId][o.slot];
+        if (!work.review.confirmed) {
+          work.review.confirmed = true;
+          writeDraft(item.caseId, o.slot, work);
+        }
+      });
+    }
+    const ok = await flushCase(item);
+    renderCase();
+    if (!ok) return;
+    if (item.needsPreference && !app.prefs[item.caseId].winner) {
+      setStatus("参加者に出すならどちらを使いたいか選んでください（A / B / T）", false);
+      return;
+    }
+    const after = app.cases.findIndex((c, i) => i > app.index && !isComplete(c));
+    const target = app.filter ? (after >= 0 ? after : app.cases.findIndex((c) => !isComplete(c))) : app.index + 1;
+    if (target >= 0 && target < app.cases.length && target !== app.index) go(target);
+    else setStatus("保存しました（最後のケースです）", true);
+  };
+  const setMode = (mode) => {
+    app.mode = mode;
+    localStorage.setItem(`evalReview2:${app.judgeId}:mode`, mode);
+    render();
+  };
+
+  // ---- rendering ----
+  const renderChrome = () => {
+    const done = app.cases.filter(isComplete).length;
+    $("mode-quick").setAttribute("aria-pressed", String(app.mode === "quick"));
+    $("mode-full").setAttribute("aria-pressed", String(app.mode === "full"));
+    $("progress").textContent = app.view === "summary" ? "集計" : app.view === "blind" ? "好みの集計" : `ケース ${app.index + 1} / ${app.cases.length}`;
+    $("completed").textContent = `完了 ${done} / ${app.cases.length}`;
+    $("eta").textContent = etaText();
+    $("judge").textContent = `判定者: ${app.judgeId}`;
+    $("summary-button").disabled = done !== app.cases.length;
+    fill($("chips"),
+      ...app.cases.map((c, i) =>
+        app.filter && isComplete(c) && i !== app.index
+          ? null
+          : el("button", {
+              class: `chip${isComplete(c) ? " done" : ""}${i === app.index && app.view === "case" ? " current" : ""}`,
+              title: `${c.caseId}${isComplete(c) ? "（完了）" : ""}`,
+              onclick: () => go(i),
+            }, String(i + 1)),
+      ).filter(Boolean),
+    );
+  };
+
+  const check = (ok, label) => el("span", { class: `badge ${ok ? "ok" : "ng"}` }, `${label} ${ok ? "✓" : "✗"}`);
+  const outputBadges = (output) =>
+    !output.judgeable
+      ? el("span", { class: "badge error" },
+          output.recordIssue === "missing" ? "応答なし（未計測）" : output.recordIssue === "duplicate" ? "記録が重複" : `HTTPエラー ${output.httpStatus ?? output.errorCode ?? ""}`)
+      : [
+          output.checks.structure ? null : el("span", { class: "badge error" }, "構造エラー"),
+          output.checks.structure ? null : [check(output.checks.parserAccepted, "解析"), check(output.checks.runtimeAccepted, "実行時検証"), check(output.checks.exactCount, "15件")],
+        ];
+  const noticeFor = (caseId, kind) => {
+    const key = keyOf(caseId, kind);
+    if (!app.notices[key]) return null;
+    return el("div", { class: "notice" }, app.notices[key],
+      app.conflicts[key]
+        ? [" ", el("button", { disabled: app.locked, onclick: () => reapply(caseId, kind) }, "自分の未保存の変更を再適用"),
+           " ", el("button", { onclick: () => { delete app.conflicts[key]; delete app.notices[key]; clearDraft(caseId, `${kind}:conflict`); renderCase(); } }, "破棄")]
+        : null);
+  };
+
+  const renderCell = (item, output, n) => {
+    const col = output.slot === "A" ? "col-a" : "col-b";
+    if (!output.judgeable || !output.statements || n > output.statements.length) {
+      return el("div", { class: `cell empty ${col}` });
+    }
+    const review = app.work[item.caseId][output.slot].review;
+    const flag = flagOf(review, n);
+    const shared = output.shared?.[n - 1];
+    const labels = (flag?.criteria || []).map((id) => item.criteriaView.find((c) => c.id === id)?.label || id);
+    const isCursor = app.cursor.slot === output.slot && app.cursor.n === n;
+    const chooserOpen = app.chooser && app.chooser.slot === output.slot && app.chooser.n === n;
+    return el("div", {
+      class: `cell ${col}${flag ? " flagged" : ""}${shared ? " shared" : ""}${isCursor ? " cursor" : ""}`,
+      "data-slot": output.slot, "data-n": String(n),
+      onmousedown: () => {
+        const active = document.activeElement;
+        const target = active?.dataset?.reason;
+        app.pendingCite = target?.startsWith(`${output.slot}:`)
+          ? { slot: output.slot, criterionId: target.slice(2) } : null;
+      },
+      onclick: (event) => {
+        if (event.target.closest(".chooser")) return;
+        clickStatement(output.slot, n);
+      },
+    },
+      el("span", { class: "num muted" }, `#${n}`),
+      el("div", { class: "text" },
+        labels.map((label) => el("span", { class: "flag-label" }, label)),
+        el("span", {}, output.statements[n - 1]),
+        shared ? el("span", { class: "shared-tag", title: "もう一方の出力にもほぼ同じ文があります（隠さず薄く表示。指摘もできます）" }, "AとBで共通") : null,
+        flag?.comment ? el("div", { class: "small muted" }, `メモ: ${flag.comment}`) : null,
+        chooserOpen ? renderChooser(item, output, n, flag) : null));
+  };
+  const renderChooser = (item, output, n, flag) =>
+    el("div", { class: "chooser", role: "group", "aria-label": `#${n} の問題` },
+      el("div", { class: "small muted" }, `#${n} のどこが問題か（複数可。数字キーでも選べます）`),
+      el("div", { class: "opts" },
+        statementCriteria(item).map((c, i) =>
+          el("button", {
+            "aria-pressed": String(Boolean(flag?.criteria.includes(c.id))),
+            title: c.rule, disabled: app.locked,
+            onclick: () => toggleChip(output.slot, n, c.id),
+          }, `${i + 1} ${c.label}`))),
+      el("input", {
+        type: "text", value: flag?.comment || "", maxlength: "500", disabled: app.locked || !flag,
+        placeholder: flag ? "ひとことメモ（任意）" : "問題を選ぶとメモを書けます",
+        "aria-label": `#${n} のメモ`,
+        oninput: (event) => touch(item.caseId, output.slot, (work) => {
+          const target = flagOf(work.review, n);
+          if (target) target.comment = event.target.value;
+        }, true),
+      }),
+      el("div", { class: "small" },
+        flag ? el("button", { disabled: app.locked, onclick: () => removeFlag(output.slot, n) }, "指摘を外す") : null, " ",
+        el("button", { onclick: () => { app.chooser = null; renderCase(); } }, "閉じる（Esc）")));
+
+  const derivedOf = (output) => output.judgment?.criteria || [];
+  const heldStatementCriteria = (item, work) =>
+    statementCriteria(item).filter((c) => work.review.overrides[c.id]?.verdict === "unrated");
+  const panelFor = (item, output) => {
+    const work = app.work[item.caseId][output.slot];
+    if (!output.judgeable) return el("div", { class: "panel" }, el("h3", {}, `出力${output.slot}`), el("p", { class: "muted" }, "内容がないため判定は不要です。"));
+    const failures = derivedOf(output).filter((r) => r.verdict === "fail").length;
+    const confirmed = work.review.confirmed;
+    const decided = output.judgment && derivedOf(output).every((r) => r.verdict !== "unrated");
+    const holds = Object.values(work.review.overrides).filter((o) => o.verdict === "unrated").length;
+    return el("div", { class: "panel", "data-output": output.slot },
+      el("div", { class: "badges" },
+        el("h3", {}, `出力${output.slot}`),
+        el("span", { class: `state-pill ${decided ? "done" : "todo"}` }, decided ? "確認済み" : holds > 0 ? `保留あり（${holds}）` : "未確認"),
+        el("span", { class: "small muted" }, `指摘 ${work.review.flags.length} 文 / 不合格の観点 ${failures}`)),
+      noticeFor(item.caseId, output.slot),
+      output.staleJudgment ? el("div", { class: "notice" }, "以前の判定は出力またはルーブリックが変わったため無効です。") : null,
+      app.mode === "full"
+        ? [
+            el("div", { class: "small muted" }, "15文全体について（既定は「満たす」。違うときだけ押す）"),
+            setCriteria(item).map((c) => {
+              const answer = work.review.set[c.id];
+              const notMet = answer && !answer.met;
+              const hold = !answer && work.review.overrides[c.id]?.verdict === "unrated";
+              const overridden = !answer && !hold && work.review.overrides[c.id];
+              const metLabel = notMet || hold ? "満たす" : overridden ? `満たす（指定: ${overridden.verdict === "pass" ? "合格" : "不合格"}）` : "満たす（既定）";
+              return el("div", { class: "setq" },
+                el("span", { class: "rule" }, c.caseSpecific ? el("span", { class: "kind required" }, "このケース") : null, " ", c.rule),
+                el("button", { class: "met", "aria-pressed": String(!notMet && !hold), disabled: app.locked, onclick: () => setAnswer(output.slot, c.id, true) }, metLabel),
+                el("button", { class: "notmet", "aria-pressed": String(Boolean(notMet)), disabled: app.locked, onclick: () => setAnswer(output.slot, c.id, false) }, "満たさない"),
+                el("button", { class: "hold", "aria-pressed": String(hold), disabled: app.locked, title: "判断を保留する（確認しても合格にならない）", onclick: () => setAnswer(output.slot, c.id, "hold") },
+                  hold ? `保留（${work.review.overrides[c.id].evidence || "判断保留"}）` : "保留"),
+                notMet
+                  ? el("input", {
+                      type: "text", value: answer.reason, maxlength: "2000", disabled: app.locked,
+                      "data-reason": `${output.slot}:${c.id}`,
+                      placeholder: "理由（任意）。文をクリックすると #n を挿入",
+                      oninput: (event) => touch(item.caseId, output.slot, (w) => { w.review.set[c.id] = { met: false, reason: event.target.value }; }, true),
+                    })
+                  : null);
+            }),
+            heldStatementCriteria(item, work).length > 0
+              ? el("div", { class: "held" },
+                  el("span", { class: "small" }, "保留中の観点（確認しても合格になりません）: "),
+                  heldStatementCriteria(item, work).map((c) =>
+                    el("span", { class: "held-item" }, `${c.label}（${work.review.overrides[c.id].evidence || "判断保留"}）`, " ",
+                      el("button", { disabled: app.locked, onclick: () => releaseHold(output.slot, c.id) }, "保留を解除"))))
+              : null,
+            el("div", { class: "confirm" },
+              el("button", {
+                class: confirmed ? "on" : "", disabled: app.locked, "aria-pressed": String(confirmed),
+                title: "指摘していない観点をすべて合格にします",
+                onclick: () => setConfirmed(output.slot, !confirmed),
+              }, confirmed ? "確認済み ✓（取り消す）" : "この出力は確認済み"),
+              el("span", { class: "small muted" }, "指摘していない観点はすべて合格になります")),
+            el("details", {}, el("summary", { class: "small" }, "観点ごとに細かく見る"),
+              el("div", { class: "fine" }, el("table", {}, el("tbody", {},
+                item.criteriaView.map((c) => {
+                  const rating = derivedOf(output).find((r) => r.id === c.id);
+                  const override = work.review.overrides[c.id];
+                  const verdict = rating?.verdict || "unrated";
+                  return el("tr", {},
+                    el("td", {}, el("span", { class: `kind ${c.kind}` }, c.kind === "required" ? "必須" : "禁止"), " ", c.label),
+                    el("td", { class: `v-${verdict}` }, verdict === "pass" ? "合格" : verdict === "fail" ? "不合格" : "未確認"),
+                    el("td", { class: "muted" }, rating?.evidence || ""),
+                    el("td", {},
+                      ["pass", "fail", "unrated"].map((v) =>
+                        el("button", { "aria-pressed": String(override?.verdict === v), disabled: app.locked, onclick: () => setOverride(output.slot, c.id, v) },
+                          v === "pass" ? "合格" : v === "fail" ? "不合格" : "保留")),
+                      override && override.verdict !== "unrated"
+                        ? el("input", {
+                            type: "text", value: override.evidence, disabled: app.locked, placeholder: "根拠（必須）",
+                            oninput: (event) => touch(item.caseId, output.slot, (w) => { w.review.overrides[c.id] = { ...w.review.overrides[c.id], evidence: event.target.value }; }, true),
+                          })
+                        : null));
+                }))))),
+          ]
+        : null,
+      el("details", work.note ? { open: true } : {}, el("summary", { class: "small" }, "気づいたこと（任意）"),
+        el("textarea", {
+          maxlength: "5000", disabled: app.locked, placeholder: "失敗の傾向や気になった点（後で分類に使います）",
+          oninput: (event) => touch(item.caseId, output.slot, (w) => { w.note = event.target.value; }, true),
+        }, work.note)),
+      el("details", output.checks.parserAccepted ? {} : { open: true },
+        el("summary", { class: "small" }, "生の出力"), el("pre", { class: "raw" }, output.rawContent)));
+  };
+
+  const renderGrid = (item) => {
+    const [a, b] = item.outputs;
+    const rows = Math.max(a.statements?.length || 0, b.statements?.length || 0);
+    return el("section", { class: "card", "aria-label": "賛否文" },
+      el("div", { class: "grid" },
+        [a, b].map((o) => el("div", { class: `head ${o.slot === "A" ? "a" : "b"}` }, el("div", { class: "badges" }, el("h3", {}, `出力${o.slot}`), outputBadges(o)))),
+        Array.from({ length: rows }, (_, i) => i + 1).flatMap((n) => [renderCell(item, a, n), renderCell(item, b, n)])),
+      el("p", { class: "small muted" }, "問題のある文をクリック（または J/K で選び F）→ 理由を選ぶ。問題がなければ何もしなくてよい。"));
+  };
+
+  const renderCase = () => {
+    const item = current();
+    const input = item.input;
+    const rules = caseRules(item);
+    const seen = readStore("seenCriteria", false);
+    const scroll = window.scrollY;
+    const focusActive = document.activeElement?.closest?.(".chooser input") ? null : undefined;
+    fill($("main"),
+      app.locked ? el("div", { class: "locked-banner", role: "status" }, `ロック中: ${app.lockedMessage}`) : null,
+      el("section", { class: "card" },
+        el("h2", {}, `${item.index + 1}. ${item.caseId}`, " ", isComplete(item) ? el("span", { class: "done-mark small" }, "完了") : null, " ",
+          item.tags.map((tag) => el("span", { class: "tag" }, tag))),
+        el("dl", { class: "input" },
+          el("dt", {}, "セッション名"), el("dd", {}, input.sessionTitle),
+          el("dt", {}, "目的"), el("dd", {}, input.sessionGoal),
+          el("dt", {}, "初期コンテキスト"), el("dd", {}, input.initialContext),
+          el("dt", {}, "既存の質問"), el("dd", {}, input.existingStatements.length === 0 ? "なし" : input.existingStatements.join(" / ")),
+          el("dt", {}, "参加者数"), el("dd", {}, input.participantCount ?? "不明")),
+        el("details", {}, el("summary", { class: "small" }, "イベントスレッドの文脈（モデルに渡した原文）"), el("pre", { class: "raw" }, input.eventThreadContext))),
+      el("section", { class: "card focus-card" },
+        el("div", {},
+          el("h3", {}, "このケースで特に見る点："),
+          el("ul", {}, rules.map((c) => el("li", {}, el("span", { class: `kind ${c.kind}` }, c.kind === "required" ? "全体で満たす" : "文に含めない"), " ", c.rule)))),
+        el("div", {},
+          el("p", { class: "example" }, el("b", {}, "許容できる文の例: "), item.acceptableExample),
+          el("p", { class: "example" }, el("b", {}, "失敗する文の例: "), item.failureExample.statement,
+            el("span", { class: "small muted" }, `（${item.failureExample.violates.map((id) => item.criteriaView.find((c) => c.id === id)?.label || id).join("、")}）`)))),
+      el("details", { class: "card", open: !seen, id: "criteria-help" },
+        el("summary", {}, "観点の説明"),
+        el("table", { class: "criteria" },
+          el("tbody", {}, item.criteriaView.map((c) =>
+            el("tr", {},
+              el("td", {}, el("span", { class: `kind ${c.kind}` }, c.kind === "required" ? "必須" : "禁止")),
+              el("td", {}, c.label),
+              el("td", {}, c.scope === "statement" ? "文ごとに指摘" : "15文全体"),
+              el("td", {}, c.rule), el("td", { class: "muted" }, c.evidence)))))),
+      renderGrid(item),
+      el("div", { class: "grid", id: "panels" }, item.outputs.map((o) => panelFor(item, o))),
+      app.mode === "quick"
+        ? el("p", { class: "small muted" }, "かんたんモード: どちらを使いたいかを選べば完了です。気になる文があればクリックして指摘できます（任意）。合否の採点にはしっかりモードが必要です。")
+        : null,
+    );
+    if (!seen) writeStore("seenCriteria", true);
+    if (focusActive === undefined) window.scrollTo(0, scroll);
+    renderBar();
+    renderChrome();
+  };
+  // After a save: refresh only the output panels' status lines.
+  const refreshPanels = () => {
+    const item = current();
+    const panels = $("panels");
+    if (!panels || document.activeElement?.closest?.("#panels")) return;
+    fill(panels, ...item.outputs.map((o) => panelFor(item, o)));
+  };
+
+  const renderBar = () => {
+    const item = current();
+    if (!item || app.view !== "case") { fill($("bar")); return; }
+    const pref = app.prefs[item.caseId];
+    const rules = caseRules(item);
+    const prefButton = (winner, label, key) =>
+      el("button", { "aria-pressed": String(pref.winner === winner), disabled: app.locked || !item.needsPreference, title: `${label} (${key})`, onclick: () => setPreference(winner) }, label);
+    const active = document.activeElement;
+    const keepReason = active?.classList?.contains("reason");
+    fill($("bar"),
+      el("div", {},
+        el("div", { class: "reminder" }, `特に見る点: ${rules.map((c) => c.label).join(" / ")}`),
+        el("div", { class: "row1" },
+          el("span", { class: "q" }, "参加者に出すなら、どちらの15文を使いたいか"),
+          prefButton("A", "出力A", "A"), prefButton("B", "出力B", "B"), prefButton("tie", "同等", "T"),
+          el("span", { class: "reasons" }, REASON_TAGS.map((tag) =>
+            el("button", { "aria-pressed": String((pref.reasonTags || []).includes(tag)), disabled: app.locked || !item.needsPreference, onclick: () => toggleReasonTag(tag) }, tag))),
+          el("input", {
+            class: "reason", type: "text", value: pref.reason, maxlength: "5000", disabled: app.locked || !item.needsPreference,
+            placeholder: "理由（任意）",
+            oninput: (event) => {
+              pref.reason = event.target.value;
+              writeDraft(item.caseId, "pref", pref);
+              debounce(keyOf(item.caseId, "pref"), () => persist(item.caseId, "pref"));
+            },
+          })),
+        noticeFor(item.caseId, "pref"),
+        item.preference.stale ? el("div", { class: "notice" }, "以前の選択は出力が変わったため無効です。") : null),
+      el("div", {},
+        el("button", { class: "go", onclick: () => confirmAndNext(), title: app.mode === "full" ? "両方の出力を確認済みにして保存し、次へ（⌘/Ctrl+Enter）" : "保存して次へ（⌘/Ctrl+Enter）" },
+          app.mode === "full" ? "確定して次へ" : "次へ"),
+        el("div", { id: "save-status", class: "small muted" }, ""),
+        el("div", { class: "small muted", title: "←→ ケース / J K 文 / H L 出力A・B / 数字 文番号 / F 指摘 / Esc 閉じる / A B T 好み / C 確認済み / ⌘(Ctrl)+Enter 確定して次へ" }, "キー操作 ⓘ")),
+    );
+    if (keepReason) document.querySelector("footer input.reason")?.focus();
+  };
+
+  const percent = (value) => (value === null ? "-" : `${Math.round(value * 100)}%`);
+  // Shows model names: only after POST /api/unblind (which locks the judge).
+  const renderSummary = async () => {
+    try {
+      const summary = await api("GET", "/api/summary");
+      app.view = "summary";
+      app.locked = true;
+      fill($("main"),
+        el("section", { class: "card" },
+          el("h2", {}, "あなたの判定の集計"),
+          el("p", { class: "notice" }, "モデル名を表示しました。盲検が解けたため、この判定者の判定はロックされ、以後は修正できません。"),
+          summary.mode === "quick"
+            ? el("p", { class: "notice" }, `かんたんモードで開きました。合否（pass/fail）の採点には、しっかりモードで確認した判定だけが使われます（しっかりで確認済み: ${summary.fullyJudged} / ${app.cases.length}）。`)
+            : null,
+          el("h3", {}, "好み（参加者に出すならどちらを使いたいか）"),
+          el("ul", {},
+            summary.preferences.wins.map((w) => el("li", {}, `${w.model}: ${w.wins} 件`)),
+            el("li", {}, `同等: ${summary.preferences.ties} 件`)),
+          el("h3", {}, "観点ごとの合格率（確認済みの判定のみ）"),
+          summary.unconfirmedJudgments > 0
+            ? el("p", { class: "small muted" }, `かんたんでの指摘など、確認していない判定 ${summary.unconfirmedJudgments} 件は含めていません。`)
+            : null,
+          el("table", { class: "summary" },
+            el("thead", {}, el("tr", {}, el("th", {}, "観点"), summary.models.map((m) => el("th", {}, m)))),
+            el("tbody", {}, summary.criteria.map((row) =>
+              el("tr", {}, el("td", {}, row.criterionId),
+                row.byModel.map((cell) => el("td", {}, `${percent(cell.passRate)}（${cell.pass}/${cell.decided}）`)))))),
+          el("p", {}, el("button", { onclick: () => { app.view = "case"; render(); } }, "ケースに戻る"))));
+      fill($("bar"));
+      renderChrome();
+    } catch (error) {
+      setStatus(`集計はまだ表示できません（${error.message}）`, false);
+    }
+  };
+  const UNBLIND_WORD = "ロックする";
+  const unblindAndShow = async () => {
+    if (app.locked) return renderSummary();
+    const quick = app.mode === "quick";
+    const ok = quick
+      ? window.prompt(
+          `かんたんモードで集計を開きます。\n\nモデル名が表示され、この判定者は以後いっさい保存できなくなります。しっかり判定（問題の文の指摘・確認）もこの後は保存できません。\n合否の採点にしっかり判定を使う予定があるなら、先にしっかりモードで全ケースを確認してください。\n\n続けるには「${UNBLIND_WORD}」と入力してください。`,
+        ) === UNBLIND_WORD
+      : window.confirm("集計を開くとモデル名が表示され、この判定者の判定はロックされます（取り消せません）。開きますか？");
+    if (!ok) {
+      setStatus("集計は開きませんでした", true);
+      return;
+    }
+    try {
+      await api("POST", "/api/unblind", { mode: app.mode, confirm: true });
+      await renderSummary();
+    } catch (error) {
+      setStatus(`集計を開けませんでした（${error.message}）`, false);
+    }
+  };
+  // Preference results without model names: which side (A = left) won, per case.
+  // Reads only this page's state; no unblinding, no lock.
+  const renderBlindPreferences = () => {
+    app.view = "blind";
+    const decided = app.cases.filter((c) => c.preference.winner);
+    const count = (w) => decided.filter((c) => c.preference.winner === w).length;
+    fill($("main"),
+      el("section", { class: "card" },
+        el("h2", {}, "好みの集計（モデル名は伏せたまま）"),
+        el("p", { class: "small muted" }, "A（左）と B（右）にどのモデルが入るかはケースごとに違うため、この表からモデルの優劣は分かりません。左右の偏りの確認用です。ロックはされません。"),
+        el("p", {}, `選択済み ${decided.length} / ${app.cases.length}：出力A（左） ${count("A")} 件、出力B（右） ${count("B")} 件、同等 ${count("tie")} 件`,
+          decided.length > 0 ? `（左の勝率 ${percent((count("A") + count("tie") / 2) / decided.length)}）` : ""),
+        el("table", { class: "summary" },
+          el("thead", {}, el("tr", {}, el("th", {}, "#"), el("th", {}, "ケース"), el("th", {}, "選んだ側"), el("th", {}, "理由"))),
+          el("tbody", {}, app.cases.map((c) =>
+            el("tr", {}, el("td", {}, String(c.index + 1)), el("td", {}, c.caseId),
+              el("td", {}, c.preference.winner === "tie" ? "同等" : c.preference.winner ? `出力${c.preference.winner}` : "未選択"),
+              el("td", { class: "small" }, [...(c.preference.reasonTags || []), c.preference.reason].filter(Boolean).join(" / ")))))),
+        el("p", {}, el("button", { onclick: () => { app.view = "case"; render(); } }, "ケースに戻る"))));
+    fill($("bar"));
+    renderChrome();
+  };
+  const render = () => (app.view === "summary" ? renderSummary() : app.view === "blind" ? renderBlindPreferences() : renderCase());
+
+  // ---- keyboard ----
+  const moveCursor = (delta) => {
+    const output = outputOf(current(), app.cursor.slot);
+    const count = output?.statements?.length || 0;
+    if (count === 0) return;
+    app.cursor = { slot: app.cursor.slot, n: Math.min(count, Math.max(1, app.cursor.n + delta)) };
+    app.chooser = null;
+    renderCase();
+    document.querySelector(".cell.cursor")?.scrollIntoView({ block: "center" });
+  };
+  const digit = (d) => {
+    const item = current();
+    if (app.chooser) {
+      const c = statementCriteria(item)[Number(d) - 1];
+      if (c) toggleChip(app.chooser.slot, app.chooser.n, c.id);
+      return;
+    }
+    app.digitBuffer = `${app.digitBuffer}${d}`.slice(-2);
+    clearTimeout(app.digitTimer);
+    app.digitTimer = setTimeout(() => { app.digitBuffer = ""; }, 700);
+    const n = Number(app.digitBuffer);
+    const count = outputOf(item, app.cursor.slot)?.statements?.length || 0;
+    if (n >= 1 && n <= count) {
+      app.cursor = { slot: app.cursor.slot, n };
+      renderCase();
+      document.querySelector(".cell.cursor")?.scrollIntoView({ block: "center" });
+    }
+  };
+  document.addEventListener("keydown", (event) => {
+    const typing = /^(INPUT|TEXTAREA)$/.test(event.target.tagName) && event.target.type !== "checkbox";
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      if (app.view === "case") confirmAndNext();
+      return;
+    }
+    if (typing) {
+      if (event.key === "Escape") event.target.blur();
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey || app.view !== "case") return;
+    const key = event.key.toLowerCase();
+    if (/^[0-9]$/.test(key)) { event.preventDefault(); digit(key); return; }
+    const actions = {
+      arrowleft: () => step(-1), arrowright: () => step(1),
+      j: () => moveCursor(1), k: () => moveCursor(-1),
+      h: () => { app.cursor = { slot: "A", n: app.cursor.n }; app.chooser = null; renderCase(); },
+      l: () => { app.cursor = { slot: "B", n: app.cursor.n }; app.chooser = null; renderCase(); },
+      f: () => openChooser(app.cursor.slot, app.cursor.n),
+      escape: () => { app.chooser = null; app.pendingCite = null; renderCase(); },
+      a: () => setPreference("A"), b: () => setPreference("B"), t: () => setPreference("tie"),
+      c: () => { if (app.mode === "full") setConfirmed(app.cursor.slot, !app.work[current().caseId][app.cursor.slot]?.review.confirmed); },
+    };
+    if (actions[key]) {
+      event.preventDefault();
+      actions[key]();
+    }
+  });
+
+  // #caseId in the address bar (links, back/forward) moves to that case.
+  window.addEventListener("hashchange", () => {
+    const index = app.cases.findIndex((c) => `#${c.caseId}` === location.hash);
+    if (index < 0) return;
+    if (index === app.index) {
+      if (app.view !== "case") {
+        app.view = "case";
+        render();
+      }
+      return;
+    }
+    go(index);
+  });
+  $("prev").addEventListener("click", () => step(-1));
+  $("next").addEventListener("click", () => step(1));
+  $("filter").addEventListener("change", (event) => { app.filter = event.target.checked; renderChrome(); });
+  $("mode-quick").addEventListener("click", () => setMode("quick"));
+  $("mode-full").addEventListener("click", () => setMode("full"));
+  $("summary-button").addEventListener("click", () => unblindAndShow());
+  $("blind-button").addEventListener("click", () => renderBlindPreferences());
+
+  api("GET", "/api/state").then((state) => {
+    app.judgeId = state.judgeId;
+    app.runKey = state.runKey;
+    app.locked = state.locked;
+    app.lockedMessage = state.lockedMessage;
+    app.mode = localStorage.getItem(`evalReview2:${app.judgeId}:mode`) === "quick" ? "quick" : "full";
+    app.cases = state.cases;
+    app.cases.forEach(initWork);
+    app.cases.forEach((item) => {
+      [...item.outputs.filter((o) => o.judgeable).map((o) => o.slot), "pref"].forEach((kind) => {
+        if (!app.locked && app.notices[keyOf(item.caseId, kind)] === "未保存の下書きを復元しました") persist(item.caseId, kind);
+      });
+    });
+    const fromHash = app.cases.findIndex((c) => `#${c.caseId}` === location.hash);
+    app.index = fromHash >= 0 ? fromHash : Math.max(0, app.cases.findIndex((c) => !isComplete(c)));
+    enterCase();
+    render();
+    setStatus("読み込みました", true);
+  }).catch((error) => {
+    fill($("main"), el("p", { class: "status-ng" }, `読み込みに失敗しました: ${error.message}`));
+  });
+})();
+</script>
+</body>
+</html>

@@ -386,6 +386,10 @@
               cp app/lib/sanitize-error.ts $out/app/lib/
               # Session content language (ADR 2026-10-16), used by agents/llm.ts.
               cp app/lib/content-language.ts $out/app/lib/
+              # Model IDs (single source, env-overridable), used by agents/llm.ts.
+              cp app/lib/llm-models.ts $out/app/lib/
+              # Structured-output (json_schema) helpers, used by agents/llm.ts.
+              cp app/lib/llm-structured-output.ts $out/app/lib/
               cp package.json package-lock.json $out/
               cp -r node_modules $out/node_modules
               # Import from the packaged tree to catch missing runtime modules.

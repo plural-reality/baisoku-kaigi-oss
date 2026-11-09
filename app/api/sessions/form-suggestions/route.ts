@@ -8,7 +8,12 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getTranslations } from "next-intl/server";
 import { getHostUserIdFromRequest } from "@/lib/auth";
 import { toContentLanguage, withOutputLanguage } from "@/lib/content-language";
-import { FAST_MODEL } from "@/lib/llm";
+import { FAST_MODEL } from "@/lib/llm-models";
+import {
+  stringListFormat,
+  structuredOutputFields,
+  structuredStringList,
+} from "@/lib/llm-structured-output";
 import {
   cacheKeyFor,
   readCache,
@@ -16,8 +21,14 @@ import {
   writeCache,
 } from "@/lib/llm-user-guard";
 
-const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_API_URL =
+  process.env.OPENROUTER_API_URL ??
+  "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = FAST_MODEL;
+// Strict JSON-schema output: { questions: string[] } (strict needs an object at
+// the top level). A bare array or free text still parses (see below).
+const QUESTIONS_KEY = "questions";
+const QUESTIONS_FORMAT = stringListFormat("form_suggestions", QUESTIONS_KEY);
 
 interface FormSuggestionRequest {
   backgroundInfo: string;
@@ -146,6 +157,7 @@ JSON配列のみを出力し、他の説明文は含めないでください。`
               [{ role: "user", content: prompt }],
               contentLanguage,
             ),
+            ...structuredOutputFields(QUESTIONS_FORMAT),
           },
           {
             headers: {
@@ -189,11 +201,15 @@ JSON配列のみを出力し、他の説明文は含めないでください。`
       console.log("==================================\n");
     }
 
-    // Robustly extract a string[] from the model output. extractJsonArray
-    // handles code fences, bracket-in-string truncation, trailing commas and
-    // bullet fallbacks, returning null (never throwing) when nothing parses —
-    // so a malformed response degrades to [] instead of a 500.
-    const suggestions = extractJsonArray(output) ?? [];
+    // Structured { questions } first; otherwise extractJsonArray handles code
+    // fences, bracket-in-string truncation, trailing commas and bullet
+    // fallbacks, returning null (never throwing) when nothing parses — so a
+    // malformed response degrades to [] instead of a 500.
+    const structured = structuredStringList(output, QUESTIONS_KEY);
+    if (!structured && process.env.NODE_ENV !== "production") {
+      console.log("Form suggestions were not structured JSON; lenient parse");
+    }
+    const suggestions = structured ?? extractJsonArray(output) ?? [];
 
     writeCache(cacheKey, suggestions);
     return NextResponse.json({ suggestions });

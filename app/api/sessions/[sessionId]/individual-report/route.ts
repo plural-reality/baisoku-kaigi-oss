@@ -5,6 +5,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getUserIdFromRequest } from "@/lib/auth";
 import { toContentLanguage } from "@/lib/content-language";
 import { buildSessionBrief, generateIndividualReport } from "@/lib/llm";
+import { llmGenerationColumns } from "@/lib/llm-models";
 import { warmReportStance } from "@/lib/server/report-stance";
 import { respondExclusive } from "@/lib/server/single-flight";
 import { sessionParticipantContextFields } from "@/lib/session-context";
@@ -272,7 +273,7 @@ export async function POST(
           participantContextFields.goal,
           participantContextFields.context,
         );
-        const { reportMarkdown, deepDiveQuestions } =
+        const { reportMarkdown, deepDiveQuestions, llm } =
           await generateIndividualReport({
             sessionTitle: session.title,
             context: sessionBrief,
@@ -284,7 +285,8 @@ export async function POST(
           });
 
         // Save report to database, including deep-dive questions so the client can
-        // display them after page reload without re-generating.
+        // display them after page reload without re-generating, and the model /
+        // prompt version / generation id that produced it.
         const { data: report, error: reportError } = await supabase
           .from("individual_reports")
           .insert({
@@ -292,6 +294,7 @@ export async function POST(
             session_id: sessionId,
             content_markdown: reportMarkdown,
             deep_dive_questions: deepDiveQuestions,
+            ...llmGenerationColumns(llm),
           })
           .select(
             "id, participant_user_id, session_id, content_markdown, deep_dive_questions, created_at",

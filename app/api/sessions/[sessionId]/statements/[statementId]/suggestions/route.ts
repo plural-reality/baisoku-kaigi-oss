@@ -246,7 +246,7 @@ ${contextText}
   try {
     let fullText = "";
 
-    // Use Gemini 3 Flash for faster response times
+    // FAST_MODEL (app/lib/llm-models.ts): latency matters more than depth here.
     await callLLMStreaming(
       messages,
       (chunk: string) => {

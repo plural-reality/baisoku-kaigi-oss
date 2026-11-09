@@ -5,10 +5,11 @@ import {
 } from "@/lib/content-language";
 import {
   ACCURATE_MODEL,
-  callLLM,
+  callLLMWithMeta,
   LLMAbortedError,
   LLMUnavailableError,
 } from "@/lib/llm";
+import { PROMPT_VERSIONS, withoutLlmMeta } from "@/lib/llm-models";
 import { encodeReportFailure } from "@/lib/report-failure";
 import { sanitizeErrorForLog } from "@/lib/sanitize-error";
 import {
@@ -378,7 +379,10 @@ async function insertSessionReportRecord(options: {
       status: "pending",
       request_markdown: trimmedRequest,
       created_by: options.userId,
+      // The model we intend to call; overwritten with the one OpenRouter
+      // actually resolved once the generation completes.
       model: ACCURATE_MODEL,
+      prompt_version: PROMPT_VERSIONS.sessionReport,
     })
     .select(
       "id, session_id, version, status, request_markdown, content_markdown, created_by, model, error_message, token_usage, prompt_snapshot, created_at, updated_at, completed_at",
@@ -539,7 +543,7 @@ async function fetchTimelineEntries(
 export function buildPayloadSummary(
   payload: Record<string, unknown>,
 ): string | null {
-  const cloned = { ...payload };
+  const cloned: Record<string, unknown> = withoutLlmMeta(payload);
 
   if (typeof cloned.markdown === "string") {
     delete cloned.markdown;
@@ -938,7 +942,7 @@ export async function generateSessionReport(
       requestMarkdown: reportRow.request_markdown ?? "",
     });
 
-    const content = await callLLM(
+    const generation = await callLLMWithMeta(
       withOutputLanguage(
         [
           { role: "system", content: prompt.system },
@@ -954,9 +958,12 @@ export async function generateSessionReport(
       .from("session_reports")
       .update({
         status: "completed",
-        content_markdown: content,
+        content_markdown: generation.content,
         prompt_snapshot: snapshot,
-        model: ACCURATE_MODEL,
+        model: generation.model,
+        prompt_version: PROMPT_VERSIONS.sessionReport,
+        generation_id: generation.generationId,
+        token_usage: generation.usage,
         updated_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
       })

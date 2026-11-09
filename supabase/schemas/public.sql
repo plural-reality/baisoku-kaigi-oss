@@ -56,6 +56,11 @@ create table if not exists public.responses (
   value integer null,
   response_type text not null default 'scale' check (response_type in ('scale', 'free_text')),
   text_response text null,
+  -- How a free-text answer was entered ('typed' / 'suggested' = a W6
+  -- suggestion was clicked); null for scale answers and older rows.
+  answer_source text null
+    constraint responses_answer_source_check
+    check (answer_source is null or answer_source in ('typed', 'suggested')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (participant_user_id, session_id, statement_id),
@@ -92,6 +97,10 @@ create table if not exists public.individual_reports (
   session_id uuid not null,
   content_markdown text not null,
   created_at timestamptz not null default now(),
+  -- Provenance of the generating call (null on rows from before 2026-11).
+  model text null,
+  prompt_version text null,
+  generation_id text null,
   constraint individual_reports_participant_fk
     foreign key (participant_user_id, session_id)
     references public.participants(user_id, session_id)
@@ -111,8 +120,12 @@ create table if not exists public.session_reports (
   request_markdown text not null default '',
   content_markdown text null,
   prompt_snapshot jsonb not null default '{}'::jsonb,
-  model text not null default 'google/gemini-3-flash-preview',
+  -- No default: the app always writes the model it actually used
+  -- (app/lib/llm-models.ts), so a DB default would only mask a missing write.
+  model text not null,
   token_usage jsonb null,
+  prompt_version text null,
+  generation_id text null,
   error_message text null,
   created_by uuid not null,
   created_at timestamptz not null default now(),
@@ -132,6 +145,20 @@ alter table public.participants
   foreign key (latest_individual_report_id)
   references public.individual_reports(id)
   on delete set null;
+
+-- LLM cache ------------------------------------------------------------------
+-- Memoizes deterministic LLM calls (report-map labels, report stances) by a
+-- hash of the prompt. Server-only (service role); RLS on with no policies.
+create table if not exists public.llm_cache (
+  cache_key text primary key,
+  response text not null,
+  created_at timestamptz not null default now(),
+  -- Provenance of the cached generation (null on rows from before 2026-11).
+  model text null,
+  prompt_version text null
+);
+
+alter table public.llm_cache enable row level security;
 
 -- Event Threads -------------------------------------------------------------
 create table if not exists public.event_threads (

@@ -25,6 +25,11 @@ vi.mock("@/lib/llm", () => ({
   generateIndividualReport: vi.fn().mockResolvedValue({
     reportMarkdown: "# Report\nContent here",
     deepDiveQuestions: [],
+    llm: {
+      model: "test-model",
+      promptVersion: "test.1",
+      generationId: "gen-test",
+    },
   }),
 }));
 
@@ -301,6 +306,11 @@ describe("POST /api/sessions/[sessionId]/individual-report", () => {
     mockedGenerateReport.mockResolvedValue({
       reportMarkdown: "# Generated Report\nContent",
       deepDiveQuestions: [],
+      llm: {
+        model: "google/gemini-3.1-pro-preview",
+        promptVersion: "2026-11-07.1",
+        generationId: "gen-ir",
+      },
     });
 
     const insertedReport = {
@@ -357,6 +367,18 @@ describe("POST /api/sessions/[sessionId]/individual-report", () => {
     expect(body.report.id).toBe("report-new");
     expect(body.report.contentMarkdown).toBe("# Generated Report\nContent");
     expect(mockedGenerateReport).toHaveBeenCalledOnce();
+    // The row records which model / prompt version / generation produced it.
+    const reportsIndex = mockedFrom.mock.calls.findIndex(
+      ([table]) => table === "individual_reports",
+    );
+    const reportsBuilder = mockedFrom.mock.results[reportsIndex]?.value as {
+      insert: ReturnType<typeof vi.fn>;
+    };
+    expect(reportsBuilder.insert.mock.calls[0][0]).toMatchObject({
+      model: "google/gemini-3.1-pro-preview",
+      prompt_version: "2026-11-07.1",
+      generation_id: "gen-ir",
+    });
   });
 
   it("returns 404 when session is not found (PGRST116)", async () => {

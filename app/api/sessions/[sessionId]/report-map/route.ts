@@ -10,7 +10,9 @@ import {
   toContentLanguage,
   withOutputLanguage,
 } from "@/lib/content-language";
-import { callLLM } from "@/lib/llm";
+import { callLLMWithMeta } from "@/lib/llm";
+import { ACCURATE_MODEL, PROMPT_VERSIONS } from "@/lib/llm-models";
+import { jsonSchemaFormat } from "@/lib/llm-structured-output";
 import { EMBEDDING_MODEL, embedTexts } from "@/lib/server/embeddings";
 import { layoutFromVectors } from "@/lib/server/report-map-compute";
 import { readCachedStances } from "@/lib/server/report-stance";
@@ -178,6 +180,33 @@ const poleExcerpts = (
     .map((t) => shortenText(t, 140));
 };
 
+// Strict JSON schema for the narrative labels (same shape the prompt spells
+// out); strict mode requires every property and no extras.
+const strictObject = (properties: Record<string, unknown>) => ({
+  type: "object",
+  properties,
+  required: Object.keys(properties),
+  additionalProperties: false,
+});
+const POLE_LABELS_SCHEMA = strictObject({
+  posLabel: { type: "string" },
+  negLabel: { type: "string" },
+});
+const NARRATIVE_FORMAT = jsonSchemaFormat(
+  "report_map_narrative",
+  strictObject({
+    axes: strictObject({ pc1: POLE_LABELS_SCHEMA, pc2: POLE_LABELS_SCHEMA }),
+    clusters: {
+      type: "array",
+      items: strictObject({
+        i: { type: "integer" },
+        label: { type: "string" },
+        summary: { type: "string" },
+      }),
+    },
+  }),
+);
+
 // 「全体 vs 部分の差分」で軸極とクラスタを対比命名する (?narrative=1 時のみ)。
 // user-map の narrative パターンを自由記述素材向けに移植。失敗しても data は無傷。
 // i18n-allow: prompt for the map labels (the labels come back in the session language)
@@ -240,12 +269,18 @@ ${clusterBlocks}
     if (cachedRow?.response) {
       raw = cachedRow.response;
     } else {
-      raw = await callLLM(
+      const generation = await callLLMWithMeta(
         withOutputLanguage([{ role: "user", content: prompt }], language),
+        ACCURATE_MODEL,
+        { responseFormat: NARRATIVE_FORMAT },
       );
-      await supabase
-        .from("llm_cache")
-        .upsert({ cache_key: cacheKey, response: raw });
+      raw = generation.content;
+      await supabase.from("llm_cache").upsert({
+        cache_key: cacheKey,
+        response: raw,
+        model: generation.model,
+        prompt_version: PROMPT_VERSIONS.reportMapNarrative,
+      });
     }
 
     const match = raw.match(/\{[\s\S]*\}/);

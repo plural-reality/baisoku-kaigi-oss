@@ -5,11 +5,21 @@ import { __resetLLMLimiter } from "../llm-limiter";
 
 vi.mock("../llm", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../llm")>()),
-  generatePlanMarkdown: vi.fn(),
-  generateSurveyAnalysisMarkdown: vi.fn(),
+  generatePlanMarkdownWithMeta: vi.fn(),
+  generateSurveyAnalysisMarkdownWithMeta: vi.fn(),
 }));
 
-import { generatePlanMarkdown, generateSurveyAnalysisMarkdown } from "../llm";
+import {
+  generatePlanMarkdownWithMeta,
+  generateSurveyAnalysisMarkdownWithMeta,
+} from "../llm";
+
+const llmMeta = {
+  model: "test-model",
+  promptVersion: "test.1",
+  generationId: "gen-test",
+};
+
 import { PtolemyAgent } from "../PtolemyAgent";
 
 type QueryResult = {
@@ -90,7 +100,7 @@ function createSupabaseStub(sequenceMap: Record<string, QueryResult[]>) {
 
 describe("PtolemyAgent", () => {
   it("stores payload.error when analysis generation fails", async () => {
-    vi.mocked(generateSurveyAnalysisMarkdown).mockRejectedValueOnce(
+    vi.mocked(generateSurveyAnalysisMarkdownWithMeta).mockRejectedValueOnce(
       new Error("LLM unavailable"),
     );
 
@@ -161,7 +171,7 @@ describe("PtolemyAgent", () => {
     });
 
     expect(result).toEqual({ status: "idle" });
-    expect(generateSurveyAnalysisMarkdown).toHaveBeenCalledOnce();
+    expect(generateSurveyAnalysisMarkdownWithMeta).toHaveBeenCalledOnce();
 
     const failedUpdate = supabase.calls.events.at(-1);
     expect(failedUpdate).toBeDefined();
@@ -373,7 +383,7 @@ describe("resuming an interrupted CREATING_* run", () => {
   };
 
   it("records the new output event before calling the LLM", async () => {
-    vi.mocked(generateSurveyAnalysisMarkdown).mockRejectedValueOnce(
+    vi.mocked(generateSurveyAnalysisMarkdownWithMeta).mockRejectedValueOnce(
       new Error("LLM unavailable"),
     );
     const supabase = createSupabaseStub({
@@ -405,7 +415,10 @@ describe("resuming an interrupted CREATING_* run", () => {
   });
 
   it("retries on the failed event instead of inserting another one", async () => {
-    vi.mocked(generateSurveyAnalysisMarkdown).mockResolvedValueOnce("# done");
+    vi.mocked(generateSurveyAnalysisMarkdownWithMeta).mockResolvedValueOnce({
+      markdown: "# done",
+      llm: llmMeta,
+    });
     const supabase = createSupabaseStub({
       ...threadAndSession,
       events: [
@@ -441,6 +454,12 @@ describe("resuming an interrupted CREATING_* run", () => {
     ).toBe(false);
     const completion = supabase.calls.events.at(-1);
     expect(completion?.eq).toHaveBeenCalledWith("id", "analysis-old");
+    // payload.llm records the model / prompt version / generation behind it.
+    expect(completion?.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { statementIds: ["st-1"], markdown: "# done", llm: llmMeta },
+      }),
+    );
     expect(stateTransitions(supabase)).toEqual(["WAITING_PLAN"]);
   });
 
@@ -487,7 +506,9 @@ describe("resuming an interrupted CREATING_* run", () => {
   });
 
   it("ignores a pending event recorded for a different state", async () => {
-    vi.mocked(generatePlanMarkdown).mockRejectedValueOnce(new Error("down"));
+    vi.mocked(generatePlanMarkdownWithMeta).mockRejectedValueOnce(
+      new Error("down"),
+    );
     const supabase = createSupabaseStub({
       ...threadAndSession,
       events: [

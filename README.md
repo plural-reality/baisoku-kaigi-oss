@@ -6,6 +6,21 @@
 
 > Baisoku Kaigi ("double-speed meeting") collects and visualizes how participants see an issue, then uses an LLM to report agreements, disagreements and open questions. Licensed under AGPL-3.0. The setup guide below is in Japanese; the environment variables are documented in English in [`.env.example`](./.env.example).
 
+## OSS 版と多元現実のサービスの違い
+
+コードを公開しているので、どなたでも中身を確かめ、自分の環境で動かせます。自分で運用しない場合や、会議の設計から任せたい場合は、多元現実のサービスを使えます。機能で版を分けてはおらず、違いは誰が運用するかです。
+
+| | 自分で動かす(このリポジトリ) | ホスト版 | 運営まで依頼 |
+| --- | --- | --- | --- |
+| 費用 | 無料 | [料金は LP](https://baisoku-kaigi.plural-reality.com/lp) | 個別見積もり |
+| サーバーとデータベース | 自分で用意 | 多元現実が運用 | 多元現実が運用 |
+| LLM の API キー | 自分で用意 | 不要 | 不要 |
+| 更新と障害対応 | 自分で対応 | 多元現実が対応 | 多元現実が対応 |
+| 問いの設計と当日の進行 | 自分で実施 | 自分で実施 | 多元現実が支援 |
+| 問い合わせ先 | [Issue](https://github.com/plural-reality/baisoku-kaigi-oss/issues)(動作の保証はありません) | info@plural-reality.com | info@plural-reality.com |
+
+このリポジトリへの反映には時間差があるため、ホスト版と同じ版とは限りません。本番環境のデプロイ設定も含めていません。
+
 ## 主な機能
 
 - **セッション作成**: 目的と背景情報から、LLM が問い(ステートメント)を作る
@@ -24,7 +39,7 @@
 | Frontend / API | Next.js 15 (App Router) + React 19 + TypeScript |
 | UI | Tailwind CSS 4 + Radix UI |
 | Database | Supabase (PostgreSQL + Realtime) |
-| LLM | OpenRouter API(既定モデルは `app/lib/llm.ts`) |
+| LLM | OpenRouter API(既定モデルは `app/lib/llm-models.ts`) |
 | 認証(任意) | WorkOS AuthKit |
 | Backend(任意) | Haskell (Servant + Polysemy + Project:M36) |
 | Build | npm / Nix Flakes |
@@ -111,6 +126,7 @@ npm run start
 | `SUPABASE_SERVICE_ROLE_KEY` | ○ | ○ | サーバー側の特権アクセス |
 | `OPENROUTER_API_KEY` | ○ | ○ | LLM 呼び出し |
 | `OPENROUTER_API_URL` | | | LLM エンドポイントの差し替え |
+| `LLM_FAST_MODEL` / `LLM_ACCURATE_MODEL` | | | モデル ID の差し替え(既定は `app/lib/llm-models.ts`) |
 | `PARTICIPANT_TOKEN_SECRET` | 推奨 | ○ | 参加者トークンの署名鍵 |
 | `PARTICIPANT_TOKEN_ENFORCE` | | | `false` で旧形式トークンを受け付ける(移行用) |
 | `PARTICIPANT_TOKEN_RATE_LIMIT_PER_MIN` | | | トークン発行の IP ごとの上限(既定 30/分) |
