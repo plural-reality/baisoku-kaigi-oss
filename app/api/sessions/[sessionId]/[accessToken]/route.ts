@@ -68,7 +68,7 @@ export async function GET(
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
       .select(
-        "id, title, context, goal, facilitator_context, facilitator_goal, language, is_public, created_at, host_user_id, admin_access_token",
+        "id, title, context, goal, facilitator_context, facilitator_goal, language, source_url, is_public, created_at, host_user_id, admin_access_token",
       )
       .eq("id", sessionId)
       .single();
@@ -316,6 +316,7 @@ export async function GET(
         facilitatorContext: adminContextFields.facilitatorContext,
         facilitatorGoal: adminContextFields.facilitatorGoal,
         language: toContentLanguage(session.language),
+        sourceUrl: session.source_url,
         isPublic: session.is_public,
         createdAt: session.created_at,
         statements: statementsWithStats,

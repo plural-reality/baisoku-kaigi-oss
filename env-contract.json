@@ -29,6 +29,8 @@
       "required": false,
       "secret": false
     },
+    "DECIDIM_IMPORT_RATE_LIMIT_PER_MIN": { "required": false, "secret": false },
+    "DECIDIM_TARGET_RATE_LIMIT_PER_MIN": { "required": false, "secret": false },
     "USER_ALIAS_SECRET": { "required": false, "secret": true },
     "CSP_MODE": { "required": false, "secret": false },
     "EMBED_FRAME_ANCESTORS": { "required": false, "secret": false },

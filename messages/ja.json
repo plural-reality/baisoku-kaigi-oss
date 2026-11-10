@@ -192,6 +192,26 @@
     "rateLimited": "AI生成が混み合っています。少し待ってもう一度お試しください。",
     "previewFailed": "質問を生成できませんでした。もう一度お試しください。"
   },
+  "decidimImport": {
+    "title": "Decidim の議論から作る",
+    "description": "Decidim の参加型プロセスや提案の URL を貼ると、公開されている提案とコメントを読み、下のフォームに入力します。Decidim 側には何も書き込みません。",
+    "urlLabel": "Decidim の URL",
+    "urlPlaceholder": "https://example.org/processes/slug",
+    "import": "読み込む",
+    "importing": "議論を読んでいます…",
+    "importedFrom": "この議論から読み込みました:",
+    "truncated": "件数が多いか一部を読めなかったため、読めた範囲で反応の多いものを中心にまとめました。",
+    "remove": "出典を外す",
+    "invalidUrl": "参加型プロセス、会議体、提案、ディベートの https の URL を入力してください（例: https://example.org/processes/slug）。",
+    "unavailable": "Decidim の API から読み取れませんでした。URL を確認するか、しばらくしてからお試しください。",
+    "notFound": "この URL の議論が見つかりませんでした。公開されているか確認してください。",
+    "unsupported": "この Decidim の API には対応していません。",
+    "noContent": "この URL には読み込める提案やディベートがありません。",
+    "briefFailed": "議論の要約を作れませんでした。もう一度お試しください。",
+    "rateLimited": "読み込みが続いています。少し待ってからお試しください。",
+    "busy": "別の読み込みが進行中です。完了までお待ちください。",
+    "importFailed": "読み込みに失敗しました。もう一度お試しください。"
+  },
   "fileUpload": {
     "noSupportedFiles": "対応するファイルが見つかりません",
     "partialFailure": "一部のファイルで問題がありました:",
@@ -460,7 +480,8 @@
     "reanalyze": "分析を再実行",
     "quotedText": "「{text}」",
     "separator": "・",
-    "bullet": "・"
+    "bullet": "・",
+    "source": "出典"
   },
   "participantStatus": {
     "not_started": "未開始",

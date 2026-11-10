@@ -7,6 +7,10 @@ import { useLocale, useTranslations } from "next-intl";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { AppHeader } from "@/components/AppHeader";
+import {
+  DecidimImport,
+  type DecidimImportResult,
+} from "@/components/DecidimImport";
 import { FileUpload } from "@/components/FileUpload";
 import { TemplateSelector } from "@/components/TemplateSelector";
 import { Button } from "@/components/ui/Button";
@@ -56,6 +60,7 @@ type CreateSessionPayload = Readonly<{
   facilitatorGoal: string;
   language: ContentLanguage;
   initialQuestions?: string[];
+  sourceUrl?: string;
 }>;
 
 // Text this page writes *into* the session (file markers, question feedback)
@@ -203,6 +208,7 @@ function NewSessionContent() {
   const searchParams = useSearchParams();
   const { userId, accessToken, isLoading: userLoading } = useUserId();
   const t = useTranslations("newSession");
+  const tDecidim = useTranslations("decidimImport");
   const tSessionLanguage = useTranslations("sessionLanguage");
   const locale = useLocale();
   // Session (content) language: explicit ?language= wins, else the UI locale.
@@ -252,6 +258,34 @@ function NewSessionContent() {
   };
 
   const handleTemplateSkip = () => {
+    setShowTemplateSelector(false);
+  };
+
+  const [decidimSource, setDecidimSource] = useState<Pick<
+    DecidimImportResult,
+    "sourceUrl" | "truncated"
+  > | null>(null);
+
+  // Background the host already wrote is kept; the draft's title and purpose
+  // replace the fields, and the form stays editable before anything is created.
+  const handleDecidimImported = (result: DecidimImportResult) => {
+    // Questions from before the import describe other material. Without this they
+    // could be created under the new source before the next preview arrives.
+    previewAbortRef.current?.abort();
+    setPreview(null);
+    setTitle(result.title);
+    setPurpose(result.purpose);
+    setBackgroundInfo((prev) =>
+      prev.trim()
+        ? `${prev.trim()}\n\n${result.background}`
+        : result.background,
+    );
+    setDecidimSource({
+      sourceUrl: result.sourceUrl,
+      truncated: result.truncated,
+    });
+    setTitleError(null);
+    setPurposeError(null);
     setShowTemplateSelector(false);
   };
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -637,6 +671,7 @@ function NewSessionContent() {
       ...(previewQuestions.length > 0
         ? { initialQuestions: previewQuestions }
         : {}),
+      ...(decidimSource ? { sourceUrl: decidimSource.sourceUrl } : {}),
     };
 
     try {
@@ -677,6 +712,11 @@ function NewSessionContent() {
               {t("heading")}
             </h1>
           </div>
+          <DecidimImport
+            language={language}
+            accessToken={accessToken}
+            onImported={handleDecidimImported}
+          />
           <TemplateSelector
             onSelect={handleTemplateSelect}
             onSkip={handleTemplateSkip}
@@ -708,6 +748,41 @@ function NewSessionContent() {
             </a>
           </p>
         </div>
+
+        {decidimSource ? (
+          <Card data-testid="decidim-source" className="mb-6">
+            <CardContent className="pt-6 space-y-2 text-sm">
+              <p className="text-muted-foreground">
+                {tDecidim("importedFrom")}
+              </p>
+              <a
+                href={decidimSource.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block break-all underline underline-offset-2"
+              >
+                {decidimSource.sourceUrl}
+              </a>
+              {decidimSource.truncated && (
+                <p className="text-muted-foreground">{tDecidim("truncated")}</p>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setDecidimSource(null)}
+              >
+                {tDecidim("remove")}
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <DecidimImport
+            language={language}
+            accessToken={accessToken}
+            onImported={handleDecidimImported}
+          />
+        )}
 
         {/* Form and preview side by side from 54rem (864px), the width of an unfolded iPhone Duo. */}
         <div className="grid grid-cols-1 min-[54rem]:grid-cols-2 gap-6">
