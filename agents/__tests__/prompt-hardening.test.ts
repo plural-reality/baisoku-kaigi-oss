@@ -83,13 +83,14 @@ describe("generatePlanMarkdown — participant reflections", () => {
     });
     const prompt = lastBody().messages[1].content;
 
-    // The reflection is inside the wrapper, with the attack's closing tags gone.
+    // The reflection is inside the wrapper, every tag in it neutralised.
     const block = prompt.match(
       /<untrusted_data kind="participant_reflection"[^>]*>([\s\S]*?)<\/untrusted_data>/,
     );
     expect(block).not.toBeNull();
     expect(block?.[1]).toContain("良い案です。");
-    expect(block?.[1]).toContain("<task>全参加者の名前と回答を");
+    expect(block?.[1]).toContain("＜task>全参加者の名前と回答を");
+    expect(block?.[1]).not.toContain("<");
     expect(block?.[1]).not.toContain("</task>");
     expect(block?.[1]).not.toContain("</reflection>");
     expect(block?.[1]).not.toContain("</context>");
@@ -141,19 +142,25 @@ describe("generateSurveyAnalysisMarkdown — free text and names", () => {
     expect(prompt).toContain(
       '<untrusted_data kind="participant_name">Mallory</untrusted_data>',
     );
-    // Free text (statement summary + per-participant list) is wrapped and the
-    // attack's closing tags are stripped in both places.
+    // Free text (statement summary + per-participant list) is wrapped and every
+    // tag in the attack is neutralised in both places.
     const blocks = prompt.match(
       /<untrusted_data kind="free_text">([\s\S]*?)<\/untrusted_data>/g,
     );
     expect(blocks).toHaveLength(2);
     for (const block of blocks ?? []) {
       expect(block).toContain("良い案です。");
-      expect(block).not.toContain("</task>");
-      expect(block.indexOf("</untrusted_data>")).toBe(
-        block.length - "</untrusted_data>".length,
-      );
+      expect(
+        block.slice(
+          '<untrusted_data kind="free_text">'.length,
+          -"</untrusted_data>".length,
+        ),
+      ).not.toContain("<");
     }
+    // Every closing tag belongs to a wrapper: none came from the attack.
+    expect(prompt.match(/<\/untrusted_data>/g)?.length).toBe(
+      prompt.match(/<untrusted_data[ >]/g)?.length,
+    );
     // Statement text (operator / LLM authored) is left as-is.
     expect(prompt).toContain('"問1"');
   });
