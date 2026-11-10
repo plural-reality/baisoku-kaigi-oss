@@ -47,6 +47,11 @@ describe("untrusted-text", () => {
     );
     expect(inner).not.toContain("<");
     expect(inner).toContain("INJECT");
+    // The same text as a display name, inline or as an attribute.
+    const name = untrustedName(attack);
+    expect(name.match(/<\/untrusted_data>/g)).toHaveLength(1);
+    expect(name.endsWith("</untrusted_data>")).toBe(true);
+    expect(wrapUntrusted("t", { name: attack }).match(/</g)).toHaveLength(2);
   });
 
   it("keeps ordinary text whole, including comparisons", () => {

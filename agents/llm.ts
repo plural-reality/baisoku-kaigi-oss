@@ -324,7 +324,7 @@ export async function generatePlanMarkdownWithMeta(
       ? String(input.participantCount)
       : "unknown";
   // Reflections are participant-authored: each one (text AND name) is isolated
-  // in an <untrusted_data> block with closing tags stripped (audit H1).
+  // in an <untrusted_data> block with every tag opener neutralised (audit H1).
   const reflectionsSection =
     input.participantReflections && input.participantReflections.length > 0
       ? `<participant_reflections>
