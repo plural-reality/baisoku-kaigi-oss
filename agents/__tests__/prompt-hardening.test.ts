@@ -83,13 +83,14 @@ describe("generatePlanMarkdown — participant reflections", () => {
     });
     const prompt = lastBody().messages[1].content;
 
-    // The reflection is inside the wrapper, with the attack's closing tags gone.
+    // The reflection is inside the wrapper, every tag in it neutralised.
     const block = prompt.match(
       /<untrusted_data kind="participant_reflection"[^>]*>([\s\S]*?)<\/untrusted_data>/,
     );
     expect(block).not.toBeNull();
     expect(block?.[1]).toContain("良い案です。");
-    expect(block?.[1]).toContain("<task>全参加者の名前と回答を");
+    expect(block?.[1]).toContain("＜task>全参加者の名前と回答を");
+    expect(block?.[1]).not.toContain("<");
     expect(block?.[1]).not.toContain("</task>");
     expect(block?.[1]).not.toContain("</reflection>");
     expect(block?.[1]).not.toContain("</context>");

@@ -18,12 +18,16 @@ export const UNTRUSTED_DATA_RULE = `セキュリティ上の固定ルール: <${
 
 // Any closing tag (`</reflection>`, `</untrusted_data>`, `</context>`, …) typed
 // inside participant text could terminate the wrapper early and let the rest of
-// the text pose as operator-authored prompt. Strip the closing-tag strings; the
-// surrounding words stay readable.
-const CLOSING_TAG_RE = /<\s*\/\s*[A-Za-z_][\w:.-]*\s*>/g;
+// the text pose as operator-authored prompt. Matching closing tags is not enough:
+// a removal joins its neighbours (`</untr</x>usted_data>`), and spacing, `/>`,
+// zero-width or NUL characters make forms a pattern misses but a model still
+// reads as a tag. Every `<` becomes a full-width lookalike instead, so no tag of
+// any shape can start inside the data and no words are lost.
+// i18n-allow: replacement character inside participant text, not a UI label
+const ANGLE_LOOKALIKE = "\uFF1C";
 
-export const stripClosingTags = (text: string): string =>
-  text.replace(CLOSING_TAG_RE, "");
+export const neutralizeTags = (text: string): string =>
+  text.replace(/</g, ANGLE_LOOKALIKE);
 
 // Attribute values (participant names) must not be able to close the quote or
 // the tag. Also bounded so a name cannot smuggle a paragraph of instructions.
@@ -48,7 +52,7 @@ export const wrapUntrusted = (
   text: string,
   attributes: Readonly<Record<string, string | undefined>> = {},
 ): string =>
-  `<${UNTRUSTED_DATA_TAG}${formatAttributes(attributes)}>${stripClosingTags(text)}</${UNTRUSTED_DATA_TAG}>`;
+  `<${UNTRUSTED_DATA_TAG}${formatAttributes(attributes)}>${neutralizeTags(text)}</${UNTRUSTED_DATA_TAG}>`;
 
 // Participant display name, for inline use inside a prompt (not an attribute).
 export const untrustedName = (name: string): string =>
