@@ -66,7 +66,7 @@ jobs:
         run: npx playwright install --with-deps chromium
       # The specs read a seeded session (tests/e2e/fixtures/seed-e2e.sql) from a
       # local Supabase started from supabase/config.toml (API 55321, DB 55322).
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         with:
           version: 2.75.0
       - name: Start Supabase and seed the E2E session
