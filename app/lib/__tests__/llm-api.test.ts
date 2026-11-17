@@ -2,18 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // We need to mock axios before importing llm
 vi.mock("axios", async () => {
-  const actual = (await vi.importActual("axios")) as typeof import("axios") &
-    Record<string, unknown>;
-  const actualDefault = actual.default as Record<string, unknown>;
+  const actual = await vi.importActual<typeof import("axios")>("axios");
   return {
     ...actual,
     default: {
-      ...actualDefault,
+      ...actual.default,
       post: vi.fn(),
-      isAxiosError:
-        (actualDefault.isAxiosError as ((e: unknown) => boolean) | undefined) ??
-        ((err: unknown) =>
-          (err as { isAxiosError?: boolean })?.isAxiosError === true),
     },
   };
 });

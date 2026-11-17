@@ -1298,8 +1298,6 @@ export default function AdminPage({
   const participants = data?.participants ?? [];
   const totalParticipants =
     data?.totalParticipants ?? participants?.length ?? 0;
-  const _totalStatements =
-    data?.totalStatements ?? data?.statements?.length ?? 0;
   const statements = data?.statements ?? [];
 
   const participantSummary = useMemo(
@@ -3111,15 +3109,6 @@ function ThreadEventBubble({
     event.type === "survey"
       ? event.statements.length > 3
       : markdown.length > 240;
-
-  const progressValue =
-    typeof event.progress === "number"
-      ? event.progress
-      : Number(event.progress ?? 0);
-  const _progressPercent = Math.max(
-    0,
-    Math.min(100, Math.round(progressValue * 100)),
-  );
 
   const visibleStatements =
     event.type === "survey" && !expanded && event.statements.length > 3

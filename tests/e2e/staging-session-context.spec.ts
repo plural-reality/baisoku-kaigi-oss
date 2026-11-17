@@ -122,7 +122,8 @@ test.describe("staging session context", () => {
       const createBody = (await createResponse.json()) as {
         session: CreatedSession;
       };
-      createdSession = createBody.session;
+      const session = createBody.session;
+      createdSession = session;
 
       const adminApiResponse = await request.get(
         `/api/sessions/${createdSession.id}/${createdSession.adminAccessToken}`,
@@ -189,7 +190,7 @@ test.describe("staging session context", () => {
           response
             .url()
             .includes(
-              `/api/sessions/${createdSession.id}/${createdSession.adminAccessToken}`,
+              `/api/sessions/${session.id}/${session.adminAccessToken}`,
             ) && response.request().method() === "PATCH",
       );
       await page.getByRole("button", { name: "変更を保存" }).click();
