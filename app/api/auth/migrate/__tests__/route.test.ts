@@ -20,7 +20,7 @@ const migrateRequest = (body: unknown, bearer?: string) =>
 
 beforeEach(() => {
   vi.mocked(withAuth).mockResolvedValue({ user: { id: NEW } } as never);
-  vi.mocked(supabase.rpc as never).mockResolvedValue({ error: null } as never);
+  vi.mocked(supabase.rpc).mockResolvedValue({ error: null } as never);
 });
 
 afterEach(() => {

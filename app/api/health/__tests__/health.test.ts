@@ -7,11 +7,11 @@ vi.mock("@/lib/supabase", () => ({
 }));
 
 vi.mock("axios", async () => {
-  const actual = await vi.importActual("axios");
+  const actual = await vi.importActual<typeof import("axios")>("axios");
   return {
     ...actual,
     default: {
-      ...(actual as Record<string, unknown>).default,
+      ...actual.default,
       get: vi.fn(),
     },
   };
