@@ -7,7 +7,7 @@
 //   node scripts/weed-ratchet.mjs --update  rewrite the baseline from the tree
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const BASELINE = "scripts/weed-ratchet.baseline.json";
 const SOURCE = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
@@ -44,22 +44,35 @@ const WEEDS = [
   },
 ];
 
+// Local CI checks an exported commit with no .git, so fall back to walking the tree.
+const WALK_SKIP =
+  /(^|\/)(\.git|node_modules|\.next|dist|build|public|coverage|test-results|playwright-report)(\/|$)/;
+
+const gitFiles = () => {
+  try {
+    return execFileSync(
+      "git",
+      ["ls-files", "--cached", "--others", "--exclude-standard"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ).split("\n");
+  } catch {
+    return null;
+  }
+};
+
+const walkFiles = () =>
+  readdirSync(".", { recursive: true, encoding: "utf8" })
+    .map((f) => f.split("\\").join("/"))
+    .filter((f) => !WALK_SKIP.test(f));
+
 const listFiles = () =>
-  execFileSync(
-    "git",
-    ["ls-files", "--cached", "--others", "--exclude-standard"],
-    {
-      encoding: "utf8",
-    },
-  )
-    .split("\n")
-    .filter(
-      (f) =>
-        SOURCE.test(f) &&
-        !SKIP.test(f) &&
-        f !== "scripts/weed-ratchet.mjs" &&
-        existsSync(f),
-    );
+  (gitFiles() ?? walkFiles()).filter(
+    (f) =>
+      SOURCE.test(f) &&
+      !SKIP.test(f) &&
+      f !== "scripts/weed-ratchet.mjs" &&
+      existsSync(f),
+  );
 
 const countFile = (file) => {
   const text = readFileSync(file, "utf8");
