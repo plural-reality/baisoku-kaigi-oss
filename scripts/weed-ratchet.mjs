@@ -90,17 +90,30 @@ const totals = (table) =>
 
 const current = measure();
 
-if (process.argv.includes("--update")) {
-  writeFileSync(BASELINE, `${JSON.stringify(current, null, 2)}\n`);
-  console.log(
-    `weed-ratchet: baseline written ${JSON.stringify(totals(current))}`,
-  );
-  process.exit(0);
-}
-
 const baseline = existsSync(BASELINE)
   ? JSON.parse(readFileSync(BASELINE, "utf8"))
   : {};
+
+if (process.argv.includes("--update")) {
+  const before = totals(baseline);
+  const after = totals(current);
+  const grewTotal = WEEDS.filter(
+    ({ kind }) => after[kind] > (before[kind] ?? 0),
+  );
+  if (existsSync(BASELINE) && grewTotal.length > 0) {
+    console.error(
+      `weed-ratchet: refusing to raise the baseline (${grewTotal
+        .map(({ kind }) => `${kind} ${before[kind] ?? 0} -> ${after[kind]}`)
+        .join(
+          ", ",
+        )}). Remove the new ones instead; moving one between files is fine.`,
+    );
+    process.exit(1);
+  }
+  writeFileSync(BASELINE, `${JSON.stringify(current, null, 2)}\n`);
+  console.log(`weed-ratchet: baseline written ${JSON.stringify(after)}`);
+  process.exit(0);
+}
 
 const diffs = Object.entries(current).flatMap(([file, counts]) =>
   Object.entries(counts).map(([kind, n]) => ({
