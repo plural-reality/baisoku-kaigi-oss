@@ -19,7 +19,7 @@
     "test:e2e:headed": "playwright test --headed",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:smoke": "bash tests/smoke/smoke.sh",
-    "lint": "biome check --error-on-warnings && node scripts/hardcoded-japanese.mjs && node scripts/check-design-system-copy.mjs --self-only",
+    "lint": "biome check --error-on-warnings && node scripts/weed-ratchet.mjs && node scripts/hardcoded-japanese.mjs && node scripts/check-design-system-copy.mjs --self-only",
     "format": "biome format --write",
     "ds:check": "node scripts/check-design-system-copy.mjs",
     "db:types": "npx supabase gen types typescript --local 2>/dev/null | grep -v 'Supabase CLI' | grep -v 'recommend updating' | grep -v 'Connecting to db' | grep -v 'WARN:' > app/lib/database.types.ts"

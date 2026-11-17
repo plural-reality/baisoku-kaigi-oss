@@ -1,0 +1,137 @@
+{
+  "agents/AgentManager.ts": {
+    "timer": 2
+  },
+  "agents/__tests__/PtolemyAgent.test.ts": {
+    "suppression": 1
+  },
+  "agents/llm-limiter.ts": {
+    "timer": 1
+  },
+  "agents/llm-retry.ts": {
+    "timer": 1
+  },
+  "agents/utils.ts": {
+    "timer": 1
+  },
+  "app/api/debug/sentry-test/route.ts": {
+    "suppression": 1
+  },
+  "app/api/sessions/[sessionId]/[accessToken]/response-logs/route.ts": {
+    "doubleCast": 1
+  },
+  "app/api/sessions/route.ts": {
+    "timer": 1
+  },
+  "app/components/ConsensusBeeswarm.tsx": {
+    "useEffect": 1,
+    "suppression": 1
+  },
+  "app/components/FileUpload.tsx": {
+    "suppression": 1
+  },
+  "app/components/HeaderAccountMenu.tsx": {
+    "useEffect": 1
+  },
+  "app/components/Markdown.tsx": {
+    "doubleCast": 1
+  },
+  "app/components/MermaidDiagram.tsx": {
+    "useEffect": 1,
+    "suppression": 1
+  },
+  "app/components/ReportMap.tsx": {
+    "useEffect": 1,
+    "suppression": 2
+  },
+  "app/components/__tests__/Markdown.test.tsx": {
+    "suppression": 1
+  },
+  "app/components/pr/Menu/Menu.tsx": {
+    "useEffect": 1
+  },
+  "app/components/report/ReportMarkdown.tsx": {
+    "suppression": 1
+  },
+  "app/components/report/StatementTagPopover.tsx": {
+    "useEffect": 1,
+    "timer": 2,
+    "suppression": 1
+  },
+  "app/components/ui/mode-toggle.tsx": {
+    "useEffect": 1
+  },
+  "app/components/ui/textarea.tsx": {
+    "useEffect": 1
+  },
+  "app/embed/demo/demo-player.tsx": {
+    "useEffect": 6,
+    "timer": 2,
+    "suppression": 2
+  },
+  "app/embed/demo/fixtures.ts": {
+    "doubleCast": 1
+  },
+  "app/global-error.tsx": {
+    "useEffect": 1
+  },
+  "app/home-client-page.tsx": {
+    "useEffect": 1
+  },
+  "app/i18n/__tests__/hardcoded-japanese.test.ts": {
+    "suppression": 1
+  },
+  "app/layout.tsx": {
+    "suppression": 1
+  },
+  "app/lib/__tests__/helpers/mock-supabase.ts": {
+    "suppression": 1
+  },
+  "app/lib/llm-cli.ts": {
+    "timer": 1
+  },
+  "app/lib/llm.ts": {
+    "timer": 1
+  },
+  "app/lib/public-env.ts": {
+    "doubleCast": 1
+  },
+  "app/lib/server/__tests__/session-reports.test.ts": {
+    "suppression": 1
+  },
+  "app/lib/server/session-reports.ts": {
+    "doubleCast": 1
+  },
+  "app/lib/supabase.ts": {
+    "doubleCast": 1
+  },
+  "app/lib/useUserId.ts": {
+    "useEffect": 1
+  },
+  "app/sessions/[sessionId]/[accessToken]/client-page.tsx": {
+    "useEffect": 13,
+    "timer": 10,
+    "suppression": 1
+  },
+  "app/sessions/[sessionId]/[accessToken]/reports/[reportId]/print/client-page.tsx": {
+    "useEffect": 1,
+    "timer": 4
+  },
+  "app/sessions/[sessionId]/client-page.tsx": {
+    "useEffect": 12,
+    "timer": 8
+  },
+  "app/sessions/new/client-page.tsx": {
+    "useEffect": 3,
+    "timer": 3
+  },
+  "eval/survey/run.ts": {
+    "timer": 1
+  },
+  "sentry.edge.config.ts": {
+    "suppression": 2
+  },
+  "sentry.server.config.ts": {
+    "suppression": 2
+  }
+}
